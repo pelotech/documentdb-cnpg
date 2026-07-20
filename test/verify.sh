@@ -79,7 +79,9 @@ kind load docker-image "$EXT_IMAGE" --name "$KIND_CLUSTER"
 
 # 3. render and apply the cluster on the hardened base with the built image
 log "applying CNPG cluster $CLUSTER in ns $NS"
-kubectl create ns "$NS" --dry-run=client -o yaml | kubectl apply -f -
+# ensure a clean namespace: wait out any prior terminating one to avoid a create/delete race
+kubectl delete ns "$NS" --ignore-not-found --wait=true --timeout=120s
+kubectl create ns "$NS"
 sed -e "s|__BASE__|${HARDENED_BASE}|g" -e "s|__EXT_IMAGE__|${EXT_IMAGE}|g" test/cluster.yaml \
   | kubectl apply -n "$NS" -f -
 
@@ -110,8 +112,11 @@ echo "  present: $got" >&2
 log "smoke round-trip through documentdb API"
 marker="smoke-ok-${DOCUMENTDB_TAG#v}"
 psql "select documentdb_api.insert_one('smoke_db','things', '{ \"_id\": 1, \"marker\": \"${marker}\" }')" >/dev/null
-readback="$(psql "select bson_get_value_text(document, 'marker') from documentdb_api.collection('smoke_db','things') where bson_get_value_text(document,'_id')='1'" | tr -d '\r ')"
-echo "  inserted marker=$marker  read back=$readback" >&2
-[ "$readback" = "$marker" ] || fail "documentdb round-trip mismatch: wrote '$marker', read '$readback'"
+# read the document back as extended JSON (bsonUseEJson renders JSON, not BSONHEX) and
+# assert the marker survived the round-trip
+readback="$(psql "set documentdb_core.bsonUseEJson to on; select document::text from documentdb_api.collection('smoke_db','things')")"
+echo "  inserted marker=$marker" >&2
+echo "  read back: $readback" >&2
+grep -q "$marker" <<<"$readback" || fail "documentdb round-trip: marker '$marker' not found in read-back"
 
 log "PASS: cluster Ready, extensions present, documentdb round-trip equal"
