@@ -1,0 +1,29 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ddb-pg
+spec:
+  instances: 1
+  imageName: __BASE__
+  enableSuperuserAccess: true
+  storage:
+    size: 1Gi
+  postgresql:
+    shared_preload_libraries: [pg_cron, pg_documentdb_core, pg_documentdb]
+    parameters:
+      cron.database_name: postgres
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+    extensions:
+      - name: documentdb
+        image:
+          reference: __EXT_IMAGE__
+          pullPolicy: Never
+        extension_control_path: [share]
+        dynamic_library_path: [lib]
+        ld_library_path: [lib, system]
+  bootstrap:
+    initdb:
+      database: postgres
+      postInitSQL:
+        - "CREATE EXTENSION IF NOT EXISTS documentdb CASCADE;"
