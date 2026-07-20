@@ -57,9 +57,10 @@ RUN set -euo pipefail; \
       if [ -f "${x}${pkglib}/pg_documentdb_core.so" ]; then core_so="${x}${pkglib}/pg_documentdb_core.so"; break; fi; \
     done; \
     test -n "$core_so" || { echo "pg_documentdb_core.so not found in any /output/*.deb"; ls -la /output; exit 1; }; \
-    objdump -T "$core_so" | grep -q 'ucol_getSortKey_77' || { echo "missing ucol_getSortKey_77 (not linked against ICU 77)"; exit 1; }; \
-    if objdump -T "$core_so" | grep -oE 'ucol_[a-z]+_76' | grep -q .; then \
-      echo "found ICU-76 collation symbols in $core_so:"; objdump -T "$core_so" | grep -oE 'ucol_[a-z]+_76' | sort -u; exit 1; \
+    syms="$(objdump -T "$core_so")"; \
+    grep -q 'ucol_getSortKey_77' <<<"$syms" || { echo "missing ucol_getSortKey_77 (not linked against ICU 77)"; exit 1; }; \
+    if grep -qE 'ucol_[a-z]+_76' <<<"$syms"; then \
+      echo "found ICU-76 collation symbols in $core_so:"; grep -oE 'ucol_[a-z]+_76' <<<"$syms" | sort -u; exit 1; \
     fi; \
     echo "ICU-77 link verified on $(basename "$core_so")"
 
