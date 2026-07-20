@@ -1,0 +1,34 @@
+# Stage B: package the ICU-77 extension .deb as a CNPG ImageVolume image.
+#
+# Install the Stage A .deb into a builder that has pg_config, lay out the tree
+# CNPG mounts, and bundle the runtime dependency closure in /system.
+#   /lib      <- extension .so's (symlinks dereferenced)
+#   /share    <- control + SQL (extension/ and contrib/)
+#   /system   <- non-core runtime deps (ld_library_path: [lib, system])
+#   /licenses <- copyright
+#
+# cp -rL dereferences symlinks because scratch / ImageVolume drop dangling
+# symlinks (this is why the unversioned postgis.control failed until dereferenced).
+ARG DDB_BUILDER
+FROM ${DDB_BUILDER} AS deps
+COPY --from=deb-stage / /tmp/deb/
+COPY build/gen_system.sh /gen_system.sh
+
+# Install the extension .deb; -f install backfills any missing runtime dep.
+RUN dpkg -i /tmp/deb/*.deb || (apt-get update && apt-get -y -f install && dpkg -i /tmp/deb/*.deb)
+
+# Assemble the CNPG layout and compute /system (no base introspection).
+RUN set -euo pipefail; \
+    mkdir -p /out/lib /out/share /out/licenses; \
+    cp -rL "$(pg_config --pkglibdir)/." /out/lib/; \
+    cp -rL "$(pg_config --sharedir)/extension" /out/share/extension; \
+    cp -rL "$(pg_config --sharedir)/contrib"   /out/share/contrib; \
+    cp -a /usr/share/doc/*documentdb*/copyright /out/licenses/ 2>/dev/null || true; \
+    PKGLIB="$(pg_config --pkglibdir)" bash /gen_system.sh; \
+    echo "== /system contents =="; ls -1 /out/system
+
+FROM scratch
+COPY --from=deps /out/lib/      /lib/
+COPY --from=deps /out/share/    /share/
+COPY --from=deps /out/system/   /system/
+COPY --from=deps /out/licenses/ /licenses/
