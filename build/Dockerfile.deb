@@ -1,0 +1,68 @@
+# Stage A: build the DocumentDB pg extension .deb linked against ICU 77.
+#
+# The builder (DDB_BUILDER) is upstream's packaging/deb/Dockerfile-deb image: it
+# carries the full dependency tree and its own Postgres links ICU 76. We install
+# ICU 77 from source over it so the *dev* symlink (libicui18n.so) flips to 77 and
+# the extension compiles/links ICU 77, while the builder's Postgres keeps .so.76.
+# Then we neutralize upstream's override_dh_auto_test (it runs `make check`, which
+# spins up the builder's ICU-76 Postgres and cannot load a 77 extension) so
+# `debuild` completes and emits a clean .deb. A build-time objdump guard asserts
+# the extension links ucol_*_77 and no ucol_*_76.
+ARG DDB_BUILDER
+FROM ${DDB_BUILDER} AS builder
+SHELL ["/bin/bash", "-c"]
+ARG ICU_VERSION
+ARG DOCUMENTDB_TAG
+ARG PG_MAJOR=18
+
+# 1. Install ICU 77 from unicode-org source into the multiarch libdir; flip the dev symlink.
+RUN set -euo pipefail; \
+    triplet="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"; \
+    apt-get update && apt-get install -y --no-install-recommends wget ca-certificates binutils; \
+    cd /tmp; \
+    wget -qL "https://github.com/unicode-org/icu/releases/download/release-${ICU_VERSION}/icu4c-${ICU_VERSION/-/_}-src.tgz" -O icu.tgz; \
+    tar xf icu.tgz && cd icu/source; \
+    ./configure --prefix=/usr --libdir="/usr/lib/${triplet}" >/tmp/icu_conf.log 2>&1; \
+    make -j"$(nproc)" >/tmp/icu_make.log 2>&1; \
+    make install >/tmp/icu_install.log 2>&1; \
+    ldconfig; \
+    test -L "/usr/lib/${triplet}/libicui18n.so"; \
+    readlink -f "/usr/lib/${triplet}/libicui18n.so" | grep -q "\.so\.${ICU_VERSION%%-*}" \
+      || { echo "ICU dev symlink did not flip to ${ICU_VERSION%%-*}"; ls -l "/usr/lib/${triplet}/libicui18n.so"; exit 1; }
+
+WORKDIR /build
+
+# 2. Remove upstream's override_dh_auto_test target *and its whole tab-indented recipe*.
+#    A line-only delete would leave the recipe body attached and still run `make check`.
+#    The trailing (?:\n|\z) also consumes the final recipe line when rules has no trailing newline.
+RUN set -euo pipefail; \
+    perl -0pi -e 's/^override_dh_auto_test:\n(?:\t.*(?:\n|\z))*//m' debian/rules; \
+    ! grep -q '^override_dh_auto_test:' debian/rules; \
+    ! grep -q 'make check' debian/rules
+
+# 3. Build the .deb. nocheck makes the default dh_auto_test a no-op; noautodbgsym keeps
+#    the output to a single package. OS=deb13 matches the trixie builder base.
+RUN set -euo pipefail; \
+    DEB_BUILD_OPTIONS="nocheck noautodbgsym" OS=deb13 DOCUMENTDB_VERSION="${DOCUMENTDB_TAG#v}" \
+      /usr/local/bin/packaging-entrypoint.sh
+
+# 4. Build-time correctness guard: read the core .so out of the produced .deb and assert
+#    it links ICU 77 (ucol_getSortKey_77 present) and carries no ICU-76 collation symbol.
+#    (`ucol_*_76` only; a static Intel decimal-math __bid_round256_58_76 is not ICU.)
+RUN set -euo pipefail; \
+    pkglib="/usr/lib/postgresql/${PG_MAJOR}/lib"; \
+    core_so=""; \
+    for d in /output/*.deb; do \
+      x="$(mktemp -d)"; dpkg-deb -x "$d" "$x"; \
+      if [ -f "${x}${pkglib}/pg_documentdb_core.so" ]; then core_so="${x}${pkglib}/pg_documentdb_core.so"; break; fi; \
+    done; \
+    test -n "$core_so" || { echo "pg_documentdb_core.so not found in any /output/*.deb"; ls -la /output; exit 1; }; \
+    objdump -T "$core_so" | grep -q 'ucol_getSortKey_77' || { echo "missing ucol_getSortKey_77 (not linked against ICU 77)"; exit 1; }; \
+    if objdump -T "$core_so" | grep -oE 'ucol_[a-z]+_76' | grep -q .; then \
+      echo "found ICU-76 collation symbols in $core_so:"; objdump -T "$core_so" | grep -oE 'ucol_[a-z]+_76' | sort -u; exit 1; \
+    fi; \
+    echo "ICU-77 link verified on $(basename "$core_so")"
+
+# Export just the .deb(s).
+FROM scratch
+COPY --from=builder /output/*.deb /
