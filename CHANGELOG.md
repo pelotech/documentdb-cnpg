@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/pelotech/documentdb-cnpg/compare/v0.1.0...v0.1.1) (2026-07-21)
+
+
+### Refactors
+
+* rename engine image to postgresql-fips; document cluster usage + migration ([#9](https://github.com/pelotech/documentdb-cnpg/issues/9)) ([4af7f1f](https://github.com/pelotech/documentdb-cnpg/commit/4af7f1f9bd91ec5b1e8a4286ddc4e1fb662726d3))
+
 ## 0.1.0 (2026-07-21)
 
 
