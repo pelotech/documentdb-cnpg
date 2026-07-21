@@ -21,6 +21,18 @@ debdir="$work/deb-pg${PG_MAJOR}"
   --recurse-submodules --shallow-submodules \
   "https://github.com/documentdb/documentdb.git" "$work/src" 1>&2
 
+# 1b. The upstream intel-math-lib script fetches from git.launchpad.net, which
+# throttles/drops connections from CI (Azure) IP ranges: the fetch dies with
+# "expected flush after ref listing" or "the remote end hung up unexpectedly"
+# and takes the whole Stage A build with it. Wrap that one fetch in a retry
+# loop in our clone of the script so it rides over Launchpad's bad windows.
+# Idempotent (marker-guarded) so a reused .work/src is not double-patched.
+intel="$work/src/scripts/install_setup_intel_decimal_math_lib.sh"
+if [ -f "$intel" ] && ! grep -q 'launchpad fetch retry' "$intel"; then
+  FETCH_REPL='n=0; until git fetch --depth 1 origin "$MATH_LIB_VERSION"; do n=$((n+1)); [ "$n" -ge 6 ] && { echo "launchpad fetch failed after $n attempts" >&2; exit 1; }; echo "launchpad fetch retry $n" >&2; sleep "$((n*15))"; done' \
+    perl -0pi -e 'BEGIN{$r=$ENV{FETCH_REPL}} s/^git fetch --depth 1 origin "\$MATH_LIB_VERSION"$/$r/m' "$intel" 1>&2
+fi
+
 # 2. upstream deb-builder image (per major)
 docker build --platform "$plat" -f "$work/src/packaging/deb/Dockerfile-deb" \
   --build-arg BASE_IMAGE=debian:trixie --build-arg POSTGRES_VERSION="$PG_MAJOR" \
