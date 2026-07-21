@@ -63,7 +63,7 @@ Two supported delivery paths, matching the two artifacts. Both are what CI
 stands up and asserts green on both arches; the only differences here are that
 CI `kind load`s locally-built images (so it sets `pullPolicy: Never`) whereas
 these pull the published tags from GHCR, and CI uses a throwaway 1Gi single
-instance. Replace `0.1.1` with the release you want.
+instance. Replace `0.1.2` with the release you want.
 
 Two settings are load-bearing on every cluster and are easy to miss:
 
@@ -87,8 +87,8 @@ metadata:
 spec:
   instances: 1
   # documentdb + ICU 77 baked into the hardened Minimus fips base.
-  # PG17: postgresql-fips:17.10-0.1.1   PG18: postgresql-fips:18.4-0.1.1
-  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.1.1
+  # PG17: postgresql-fips:17.10-0.1.2   PG18: postgresql-fips:18.4-0.1.2
+  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.1.2
   enableSuperuserAccess: true          # lets you psql -U postgres for the smoke test
   storage:
     size: 10Gi
@@ -141,7 +141,7 @@ spec:
     extensions:
       - name: documentdb
         image:
-          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.1.1
+          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.1.2
         extension_control_path: [share]
         dynamic_library_path: [lib]
         ld_library_path: [lib, system]
