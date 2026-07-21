@@ -48,6 +48,9 @@ and `postgresql:18.4-<ref>` (a local build is `postgresql:17.10-local`). The
 extension tag carries the major as `extension:pg18-<ref>` and has no
 version-leading constraint.
 
+The ICU major, documentdb version, and pinned base are recorded as OCI image
+labels (`docker inspect`), not in the tag.
+
 Both `verify.sh` and `verify-engine.sh` bring up a CNPG cluster, wait for
 `Ready`, assert `CREATE EXTENSION documentdb CASCADE` pulls in `documentdb`,
 `postgis`, `pg_cron`, and `vector`, and round-trip a smoke document through
