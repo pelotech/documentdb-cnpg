@@ -1,0 +1,2 @@
+# versions.env is sourced at runtime but not available to the linter.
+disable=SC1091
