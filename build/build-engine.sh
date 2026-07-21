@@ -19,12 +19,14 @@ builder="ddb-builder:pg${PG_MAJOR}"
 image="$(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/image-tag.sh)"
 
 debdir="$(PG_MAJOR="$PG_MAJOR" TARGETARCH="${TARGETARCH:-}" ./build/stage-a.sh)"
+mapfile -t labels < <(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/labels.sh)
 
 docker build --platform "$plat" -f build/Dockerfile.engine \
   --build-arg DDB_BUILDER="$builder" \
   --build-arg FIPS_BASE="$FIPS_BASE" \
   --build-arg PG_MAJOR="$PG_MAJOR" \
   --build-context deb-stage="$debdir" \
+  "${labels[@]}" \
   -t "$image" .
 
 echo "built $image"

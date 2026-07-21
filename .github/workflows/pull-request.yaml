@@ -1,0 +1,14 @@
+name: pull-request
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yaml
+    permissions:
+      contents: read
+    with:
+      publish: false

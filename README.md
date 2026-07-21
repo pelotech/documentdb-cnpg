@@ -38,12 +38,18 @@ PG_MAJOR=18 ./build/build.sh
 EXT_IMAGE=<printed tag> KIND_EPHEMERAL=1 ./test/verify.sh
 ```
 
-Tags:
+Two images: `<IMAGE_REPO>/postgresql` (the engine images, one tag per Postgres
+major) and `<IMAGE_REPO>/extension` (the ImageVolume). The build scripts print the
+full reference.
 
-- Engine: `<pgver>-documentdb<docver>-icu77`, e.g. `17.10-documentdb0.114-0-icu77`.
-  The tag leads with the base's full Postgres version because CNPG parses the
-  `imageName` tag to detect major-version upgrades.
-- ImageVolume: `pg18-<docver>-icu77`, e.g. `pg18-0.114-0-icu77`.
+Engine tags lead with the base's full Postgres version, because CNPG parses the
+engine `imageName` tag to detect major-version upgrades: `postgresql:17.10-<ref>`
+and `postgresql:18.4-<ref>` (a local build is `postgresql:17.10-local`). The
+extension tag carries the major as `extension:pg18-<ref>` and has no
+version-leading constraint.
+
+The ICU major, documentdb version, and pinned base are recorded as OCI image
+labels (`docker inspect`), not in the tag.
 
 Both `verify.sh` and `verify-engine.sh` bring up a CNPG cluster, wait for
 `Ready`, assert `CREATE EXTENSION documentdb CASCADE` pulls in `documentdb`,
@@ -88,6 +94,21 @@ that starts on FerretDB's own images and ends on the hardened Minimus stack:
 
 There's no PG16 engine image: FerretDB already covers 16 and 17, so this repo
 only needs to supply an engine from step 2 onward.
+
+## CI and publishing
+
+`pull-request.yaml` builds and verifies every artifact on a pull request.
+`main.yaml` does the same on push to `main` and then publishes multi-arch images:
+a `git-<short_sha>` tag for each commit, and a release version when release-please
+cuts a release. Both call the reusable `_build.yaml`. Published tags follow the
+scheme above, e.g. `postgresql:17.10-git-1a2b3c4` or `extension:pg18-1.2.0`.
+Releases are driven by release-please from conventional commit messages, and a
+`lint-title` workflow enforces a conventional pull-request title (squash merges use
+it as the commit message release-please reads).
+
+A weekly scheduled run builds and verifies without publishing, and a `base-drift`
+job compares the pinned base digests against the live `fips:NN` tags and fails the
+run if a tag has moved, as a prompt to re-pin.
 
 ## Pins
 

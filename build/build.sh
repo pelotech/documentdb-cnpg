@@ -14,11 +14,13 @@ builder="ddb-builder:pg${PG_MAJOR}"
 image="$(ARTIFACT=imagevol PG_MAJOR="$PG_MAJOR" ./build/image-tag.sh)"
 
 debdir="$(PG_MAJOR="$PG_MAJOR" TARGETARCH="${TARGETARCH:-}" ./build/stage-a.sh)"
+mapfile -t labels < <(ARTIFACT=imagevol PG_MAJOR="$PG_MAJOR" ./build/labels.sh)
 
 # Stage B -> CNPG ImageVolume image (gen_system.sh bundles all non-core deps).
 docker build --platform "$plat" -f build/Dockerfile.imagevol \
   --build-arg DDB_BUILDER="$builder" \
   --build-context deb-stage="$debdir" \
+  "${labels[@]}" \
   -t "$image" .
 
 echo "built $image"
