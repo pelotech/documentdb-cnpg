@@ -1,0 +1,55 @@
+# Bake the ICU-77 documentdb extension into a Minimus fips:${M} CNPG image, producing a
+# runnable engine image (no ImageVolume). MinimOS layout: pkglibdir=/usr/lib/postgresql${M},
+# sharedir=/usr/share/postgresql${M}. Copy only the documentdb + dependency extension modules
+# (not base PG modules); patchelf their RPATH to the real MinimOS dirs so inter-module + /system
+# deps resolve without ldconfig; bundle /system minus a FIPS-crypto allowlist so base crypto is
+# not shadowed.
+ARG DDB_BUILDER
+ARG FIPS_BASE
+ARG PG_MAJOR
+
+FROM ${DDB_BUILDER} AS deps
+ARG PG_MAJOR
+COPY --from=deb-stage / /tmp/deb/
+COPY build/gen_system.sh /gen_system.sh
+RUN dpkg -i /tmp/deb/*.deb || (apt-get update && apt-get -y -f install && dpkg -i /tmp/deb/*.deb)
+RUN apt-get update && apt-get install -y --no-install-recommends patchelf >/dev/null
+RUN set -euo pipefail; \
+    pkglib="$(pg_config --pkglibdir)"; \
+    mkdir -p /out/lib /out/share /out/system; \
+    for so in pg_documentdb_core pg_documentdb pg_documentdb_extended_rum pg_documentdb_extended_rum_core \
+              postgis-3 pg_cron vector rum; do \
+      cp -L "$pkglib/$so.so" /out/lib/ 2>/dev/null || echo "note: $so.so absent"; \
+    done; \
+    cp -rL "$(pg_config --sharedir)/extension" /out/share/extension; \
+    cp -rL "$(pg_config --sharedir)/contrib"   /out/share/contrib; \
+    PKGLIB="$pkglib" bash /gen_system.sh; \
+    patchelf --force-rpath --set-rpath "/usr/lib/postgresql${PG_MAJOR}:/usr/lib/documentdb-system" /out/lib/*.so; \
+    for f in /out/system/*; do patchelf --force-rpath --set-rpath '/usr/lib/documentdb-system' "$f" 2>/dev/null || true; done
+
+FROM ${FIPS_BASE} AS engine
+ARG PG_MAJOR
+USER root
+# Assert MinimOS layout matches our assumption; build fails if the base changes it.
+RUN test "$(pg_config --pkglibdir)" = "/usr/lib/postgresql${PG_MAJOR}" \
+ && test "$(pg_config --sharedir)"  = "/usr/share/postgresql${PG_MAJOR}"
+COPY --from=deps /out/lib/            /usr/lib/postgresql${PG_MAJOR}/
+COPY --from=deps /out/share/extension /usr/share/postgresql${PG_MAJOR}/extension/
+COPY --from=deps /out/share/contrib   /usr/share/postgresql${PG_MAJOR}/contrib/
+COPY --from=deps /out/system/         /tmp/ddb-system/
+# Bundle every /system lib except the base's FIPS crypto; do not shadow certified libcrypto/libssl.
+RUN set -eu; \
+    mkdir -p /usr/lib/documentdb-system; \
+    for f in /tmp/ddb-system/*; do \
+      son="$(basename "$f")"; \
+      case "$son" in \
+        pg_documentdb*) continue ;; \
+        libcrypto.so*|libssl.so*|fips.so|libfips*) echo "keep base FIPS $son -- skip" ;; \
+        *) cp -aL "$f" /usr/lib/documentdb-system/ ;; \
+      esac; \
+    done; \
+    rm -rf /tmp/ddb-system; \
+    ldd /usr/lib/postgresql${PG_MAJOR}/pg_documentdb.so | grep -q 'not found' \
+      && { echo "unresolved deps in pg_documentdb.so"; ldd /usr/lib/postgresql${PG_MAJOR}/pg_documentdb.so; exit 1; } \
+      || echo "engine bake: pg_documentdb.so fully resolved"
+USER 26
