@@ -1,0 +1,75 @@
+name: main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions: {}
+
+jobs:
+  # Early warning that the vendor moved a fips:NN tag off the digest we pinned.
+  # Fails the run so a re-pin is visible; does not gate the build (we intentionally
+  # keep building the pinned digest until re-pinned).
+  base-drift:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare pinned base digests to the live tags
+        run: |
+          set -euo pipefail
+          set -a; source versions.env; set +a
+          drift=0
+          for m in $(printf '%s\n' $ENGINE_PG_MAJORS "$IMAGEVOL_PG_MAJOR" | sort -u); do
+            var="HARDENED_BASE_$m"; ref="${!var}"
+            repo="${ref%@*}"; pinned="${ref#*@}"
+            live="$(docker buildx imagetools inspect "$repo" 2>/dev/null | awk '/^Digest:/{print $2; exit}')"
+            if [ -z "$live" ]; then echo "::warning::could not resolve $repo"; continue; fi
+            if [ "$live" != "$pinned" ]; then
+              echo "::error::$repo moved: pinned $pinned, live $live; re-pin HARDENED_BASE_$m and rebuild"
+              drift=1
+            else
+              echo "$repo OK ($pinned)"
+            fi
+          done
+          exit $drift
+
+  # No releases on scheduled runs (nothing new to release).
+  release-please:
+    if: ${{ github.event_name != 'schedule' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - uses: actions/checkout@v4
+      - id: tag
+        run: |
+          if [ "${{ steps.release.outputs.releases_created }}" = "true" ]; then
+            echo "tag=${{ steps.release.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=git-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+  # push / workflow_dispatch build and publish; scheduled runs build and verify only.
+  build:
+    needs: release-please
+    if: ${{ !cancelled() && (needs.release-please.result == 'success' || needs.release-please.result == 'skipped') }}
+    uses: ./.github/workflows/_build.yaml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      publish: ${{ github.event_name != 'schedule' }}
+      image_tag: ${{ needs.release-please.outputs.tag }}

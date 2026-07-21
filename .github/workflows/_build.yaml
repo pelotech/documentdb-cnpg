@@ -1,23 +1,16 @@
-name: build
+name: _build
 
-# Triggers: source/pin changes on push, PR validation, a manual run, and a
-# scheduled base-digest drift check (the ICU-drift guard is the early warning
-# for a Minimus ICU bump).
 on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
-  schedule:
-    - cron: "17 6 * * 1"   # weekly: re-run the guards + verify against the pinned base
-
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  packages: write   # push the built image to GHCR
+  workflow_call:
+    inputs:
+      publish:
+        description: push per-arch images and assemble manifests
+        type: boolean
+        default: false
+      image_tag:
+        description: ref for published tags (git-<sha> or a release version)
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -26,8 +19,6 @@ jobs:
       matrix:
         arch: [arm64, amd64]
         # KEEP this target set IN SYNC with versions.env (ENGINE_PG_MAJORS, IMAGEVOL_PG_MAJOR).
-        # The Load-pins drift guard catches matrix-ahead-of-env; the manifest job catches
-        # env-ahead-of-matrix (a listed major with no published arm64 image errors there).
         target:
           - { artifact: engine, pg: "17" }
           - { artifact: engine, pg: "18" }
@@ -39,35 +30,37 @@ jobs:
     runs-on: ${{ matrix.runner }}
     # amd64 is unproven; non-blocking (continue-on-error) until it has its own verify pass.
     continue-on-error: ${{ matrix.experimental }}
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
 
-      # GHCR login to push the built image. The hardened base (reg.mini.dev) is public.
       - name: Log in to GHCR
+        if: ${{ inputs.publish }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Load pinned inputs from versions.env
+      - name: Load pins
         run: |
           set -euo pipefail
           set -a; source versions.env; set +a
           : "${IMAGE_REPO:?set IMAGE_REPO in versions.env}"
           pg="${{ matrix.target.pg }}"; art="${{ matrix.target.artifact }}"
           base_var="HARDENED_BASE_${pg}"; : "${!base_var:?no base for PG ${pg}}"
-          # drift guard: engine majors from ENGINE_PG_MAJORS, imagevol major from IMAGEVOL_PG_MAJOR
           if [ "$art" = engine ]; then
             case " $ENGINE_PG_MAJORS " in *" $pg "*) : ;; *) echo "::error::engine pg $pg not in ENGINE_PG_MAJORS ($ENGINE_PG_MAJORS)"; exit 1 ;; esac
           else
             [ "$pg" = "$IMAGEVOL_PG_MAJOR" ] || { echo "::error::imagevol pg $pg != IMAGEVOL_PG_MAJOR ($IMAGEVOL_PG_MAJOR)"; exit 1; }
           fi
           {
-            echo "DOCUMENTDB_TAG=$DOCUMENTDB_TAG"; echo "ICU_MAJOR=$ICU_MAJOR"; echo "ICU_VERSION=$ICU_VERSION"
-            echo "PG_MAJOR=${pg}"; echo "HARDENED_BASE=${!base_var}"; echo "IMAGE_REPO=$IMAGE_REPO"; echo "ARTIFACT=${art}"
+            echo "PG_MAJOR=$pg"
+            echo "ARTIFACT=$art"
+            echo "HARDENED_BASE=${!base_var}"
+            echo "LOCAL_IMAGE=$(ARTIFACT="$art" PG_MAJOR="$pg" REF=local ./build/image-tag.sh)"
           } >> "$GITHUB_ENV"
-          echo "IMAGE=$(ARTIFACT="$art" PG_MAJOR="$pg" ./build/image-tag.sh)" >> "$GITHUB_ENV"
 
       # ICU-drift guard: the base has no shell, so export its filesystem and grep the
       # libicui18n soname from the tar listing. sort -u reads all input to avoid a
@@ -75,6 +68,7 @@ jobs:
       - name: ICU-drift guard
         run: |
           set -euo pipefail
+          set -a; source versions.env; set +a
           cid="$(docker create "$HARDENED_BASE")"
           trap 'docker rm "$cid" >/dev/null 2>&1 || true' EXIT
           mapfile -t majors < <(docker export "$cid" | tar -t 2>/dev/null \
@@ -86,7 +80,7 @@ jobs:
           fi
           echo "ICU-drift guard OK: base ICU $got == pinned $ICU_MAJOR"
 
-      - name: Build (Stage A .deb + Stage B ImageVolume image)
+      - name: Build
         run: |
           if [ "$ARTIFACT" = engine ]; then
             TARGETARCH=${{ matrix.arch }} PG_MAJOR=${PG_MAJOR} ./build/build-engine.sh
@@ -118,64 +112,57 @@ jobs:
         with:
           install_only: true
 
-      - name: Verify (CNPG load + CREATE EXTENSION + smoke)
+      - name: Verify
         run: |
           set -euo pipefail
           if [ "$ARTIFACT" = engine ]; then
-            ENGINE_IMAGE="$IMAGE" KIND_EPHEMERAL=1 ./test/verify-engine.sh
+            ENGINE_IMAGE="$LOCAL_IMAGE" KIND_EPHEMERAL=1 ./test/verify-engine.sh
           else
-            EXT_IMAGE="$IMAGE" PG_MAJOR=${PG_MAJOR} KIND_EPHEMERAL=1 ./test/verify.sh
+            EXT_IMAGE="$LOCAL_IMAGE" PG_MAJOR=${PG_MAJOR} KIND_EPHEMERAL=1 ./test/verify.sh
           fi
 
-      - name: Publish on green
-        if: ${{ github.event_name != 'pull_request' }}
+      - name: Publish per-arch image
+        if: ${{ inputs.publish }}
         run: |
           set -euo pipefail
-          docker tag "$IMAGE" "${IMAGE}-${{ matrix.arch }}"
-          docker push "${IMAGE}-${{ matrix.arch }}"
-          echo "published ${IMAGE}-${{ matrix.arch }}"
+          pub="$(ARTIFACT="$ARTIFACT" PG_MAJOR="$PG_MAJOR" REF="$IMAGE_TAG" ./build/image-tag.sh)"
+          docker tag "$LOCAL_IMAGE" "${pub}-${{ matrix.arch }}"
+          docker push "${pub}-${{ matrix.arch }}"
+          echo "published ${pub}-${{ matrix.arch }}"
 
-  # Assemble one multi-arch manifest list per PG major from the per-(pg,arch) tags that
-  # published. Runs even if some build cells failed (!cancelled()) so one major cannot deny
-  # another its consumer tag; a major is published only if its required arm64 tag exists.
   manifest:
+    if: ${{ inputs.publish && !cancelled() }}
     needs: build
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
-      - name: Load pins
-        run: |
-          set -euo pipefail
-          set -a; source versions.env; set +a
-          echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
-          tags=""
-          for m in $ENGINE_PG_MAJORS; do tags="$tags $(ARTIFACT=engine   PG_MAJOR="$m" ./build/image-tag.sh)"; done
-          tags="$tags $(ARTIFACT=imagevol PG_MAJOR="$IMAGEVOL_PG_MAJOR" ./build/image-tag.sh)"
-          echo "MANIFEST_IMAGES=$tags" >> "$GITHUB_ENV"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create and push per-major manifest lists
+      - name: Assemble per-artifact manifest lists
         run: |
           set -euo pipefail
+          set -a; source versions.env; set +a
           overall=0
-          for image in $MANIFEST_IMAGES; do
-            refs=()
+          assemble() {
+            local image; image="$(ARTIFACT="$1" PG_MAJOR="$2" REF="$IMAGE_TAG" ./build/image-tag.sh)"
+            local refs=()
             for arch in arm64 amd64; do
               if docker manifest inspect "${image}-${arch}" >/dev/null 2>&1; then refs+=("${image}-${arch}");
               else echo "note: ${image}-${arch} not published"; fi
             done
-            have_arm64=0; for r in "${refs[@]:-}"; do [ "${r##*-}" = arm64 ] && have_arm64=1; done
-            if [ "$have_arm64" != 1 ]; then echo "::error::${image}: required arm64 missing"; overall=1; continue; fi
-            if ! docker manifest create "$image" "${refs[@]}"; then echo "::error::${image}: create failed"; overall=1; continue; fi
-            if ! docker manifest push "$image"; then echo "::error::${image}: push failed"; overall=1; continue; fi
+            local have_arm64=0
+            for r in "${refs[@]:-}"; do [ "${r##*-}" = arm64 ] && have_arm64=1; done
+            if [ "$have_arm64" != 1 ]; then echo "::error::${image}: required arm64 missing"; overall=1; return; fi
+            if ! docker manifest create "$image" "${refs[@]}"; then echo "::error::${image}: create failed"; overall=1; return; fi
+            if ! docker manifest push "$image"; then echo "::error::${image}: push failed"; overall=1; return; fi
             echo "published manifest $image -> ${refs[*]}"
-          done
+          }
+          for m in $ENGINE_PG_MAJORS; do assemble engine "$m"; done
+          assemble imagevol "$IMAGEVOL_PG_MAJOR"
           exit $overall
