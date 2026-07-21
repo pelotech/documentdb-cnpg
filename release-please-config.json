@@ -16,6 +16,6 @@
     { "type": "ci", "section": "CI" },
     { "type": "docs", "section": "Documentation" },
     { "type": "test", "section": "Tests" },
-    { "type": "chore", "section": "Chores", "hidden": true }
+    { "type": "chore", "section": "Chores" }
   ]
 }
