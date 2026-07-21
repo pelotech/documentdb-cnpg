@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/pelotech/documentdb-cnpg/compare/v0.1.1...v0.1.2) (2026-07-21)
+
+
+### Documentation
+
+* extract FerretDB migration into its own doc ([#11](https://github.com/pelotech/documentdb-cnpg/issues/11)) ([e4ef381](https://github.com/pelotech/documentdb-cnpg/commit/e4ef38139f6af44ebf57706e3d7af966ac1a9e84))
+
 ## [0.1.1](https://github.com/pelotech/documentdb-cnpg/compare/v0.1.0...v0.1.1) (2026-07-21)
 
 
