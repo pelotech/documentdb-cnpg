@@ -1,4 +1,4 @@
-# documentdb-cnpg-extension
+# documentdb-cnpg
 
 Builds the [DocumentDB](https://github.com/documentdb/documentdb) Postgres
 extension linked against ICU 77, for use with [CloudNativePG](https://cloudnative-pg.io/)

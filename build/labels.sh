@@ -16,8 +16,8 @@ case "$ARTIFACT" in
 esac
 
 printf '%s\n' \
-  --label "org.opencontainers.image.source=https://github.com/pelotech/documentdb-cnpg-extension" \
-  --label "org.opencontainers.image.url=https://github.com/pelotech/documentdb-cnpg-extension" \
+  --label "org.opencontainers.image.source=https://github.com/pelotech/documentdb-cnpg" \
+  --label "org.opencontainers.image.url=https://github.com/pelotech/documentdb-cnpg" \
   --label "org.opencontainers.image.description=${desc}" \
   --label "org.opencontainers.image.base.name=${base%@*}" \
   --label "org.opencontainers.image.base.digest=${base#*@}" \
