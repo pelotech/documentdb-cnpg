@@ -8,7 +8,7 @@
 #   /licenses <- copyright
 #
 # cp -rL dereferences symlinks because scratch / ImageVolume drop dangling
-# symlinks (this is why the unversioned postgis.control failed until dereferenced).
+# symlinks, including the unversioned postgis.control.
 ARG DDB_BUILDER
 FROM ${DDB_BUILDER} AS deps
 COPY --from=deb-stage / /tmp/deb/

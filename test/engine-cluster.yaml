@@ -1,0 +1,25 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ddb-engine
+spec:
+  instances: 1
+  imageName: __ENGINE_IMAGE__
+  imagePullPolicy: Never
+  enableSuperuserAccess: true
+  storage:
+    size: 1Gi
+  postgresql:
+    shared_preload_libraries: [pg_cron, pg_documentdb_core, pg_documentdb]
+    parameters:
+      cron.database_name: postgres
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+    pg_hba:
+      - host all all 127.0.0.1/32 trust
+      - host all all ::1/128 trust
+  bootstrap:
+    initdb:
+      database: postgres
+      postInitSQL:
+        - "CREATE EXTENSION IF NOT EXISTS documentdb CASCADE;"

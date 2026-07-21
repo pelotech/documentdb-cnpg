@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Self-contained acceptance gate. Brings up a CNPG cluster on the hardened base
-# mounting the built extension image, then proves the extension loads:
-# CREATE EXTENSION documentdb CASCADE succeeds (pulling in postgis + pg_cron +
-# vector) and a smoke document round-trips. Green here is the publish condition.
+# Brings up a CNPG cluster on the hardened base with the built extension image
+# and verifies it loads: CREATE EXTENSION documentdb CASCADE succeeds (pulling
+# in postgis + pg_cron + vector) and a smoke document round-trips. Exit status
+# gates the publish step.
 #
 # Usage:  EXT_IMAGE=<built ref> [KIND_EPHEMERAL=1] ./test/verify.sh
 #
 # Env:
 #   EXT_IMAGE       (required) the built extension image ref to verify
+#   PG_MAJOR        Postgres major to verify against (default: DEFAULT_PG_MAJOR)
 #   KIND_EPHEMERAL  =1 to create/tear down a throwaway kind cluster
 #   KIND_CLUSTER    kind cluster name              (default: ddb-ext-verify)
 #   KIND_NODE_IMAGE kind node image, k8s >= 1.35   (default: kindest/node:v1.35.0)
@@ -18,7 +19,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source versions.env
 : "${EXT_IMAGE:?pass the built image ref, e.g. EXT_IMAGE=<repo>:<tag>}"
-: "${HARDENED_BASE:?versions.env must define HARDENED_BASE}"
+PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
+base_var="HARDENED_BASE_${PG_MAJOR}"
+HARDENED_BASE="${!base_var:?no hardened base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in versions.env)}"
 
 NS=documentdb-ext-verify
 CLUSTER=ddb-pg
