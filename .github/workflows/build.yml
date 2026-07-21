@@ -17,66 +17,61 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write   # push the built image to GHCR on green
+  packages: write   # push the built image to GHCR
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
+        arch: [arm64, amd64]
+        # KEEP this target set IN SYNC with versions.env (ENGINE_PG_MAJORS, IMAGEVOL_PG_MAJOR).
+        # The Load-pins drift guard catches matrix-ahead-of-env; the manifest job catches
+        # env-ahead-of-matrix (a listed major with no published arm64 image errors there).
+        target:
+          - { artifact: engine, pg: "17" }
+          - { artifact: engine, pg: "18" }
+          - { artifact: imagevol, pg: "18" }
         include:
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            experimental: false   # proven end-to-end
-          - arch: amd64
-            runner: ubuntu-24.04
-            experimental: true    # unproven: ICU-77 source build, multiarch triplet, /system all need revalidation
-    name: build-${{ matrix.arch }}
+          - { arch: arm64, runner: ubuntu-24.04-arm, experimental: false }
+          - { arch: amd64, runner: ubuntu-24.04, experimental: true }
+    name: ${{ matrix.target.artifact }}-pg${{ matrix.target.pg }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    # amd64 is non-blocking until its own verify gate is green (see spec section 5).
+    # amd64 is unproven; non-blocking (continue-on-error) until it has its own verify pass.
     continue-on-error: ${{ matrix.experimental }}
-    # Mapped here because the `secrets` context is not allowed in step `if:` conditions.
-    env:
-      MINIMUS_REGISTRY: ${{ secrets.MINIMUS_REGISTRY }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Load pinned inputs from versions.env
-        run: |
-          set -euo pipefail
-          set -a; source versions.env; set +a
-          : "${IMAGE_REPO:?set IMAGE_REPO in versions.env}"
-          {
-            echo "DOCUMENTDB_TAG=$DOCUMENTDB_TAG"
-            echo "ICU_VERSION=$ICU_VERSION"
-            echo "ICU_MAJOR=$ICU_MAJOR"
-            echo "PG_MAJOR=$PG_MAJOR"
-            echo "HARDENED_BASE=$HARDENED_BASE"
-            echo "IMAGE_REPO=$IMAGE_REPO"
-            echo "IMAGE=${IMAGE_REPO}:${DOCUMENTDB_TAG#v}-icu${ICU_MAJOR}"
-          } >> "$GITHUB_ENV"
-
-      # Registry login is required to read the hardened base (ICU-drift/glibc guards)
-      # and to push the built image. Provide MINIMUS_REGISTRY/_USER/_TOKEN secrets for
-      # the private base; GHCR uses the built-in token.
+      # GHCR login to push the built image. The hardened base (reg.mini.dev) is public.
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Log in to hardened-base registry
-        if: ${{ env.MINIMUS_REGISTRY != '' }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.MINIMUS_REGISTRY }}
-          username: ${{ secrets.MINIMUS_USER }}
-          password: ${{ secrets.MINIMUS_TOKEN }}
 
-      # ICU-drift guard (fails loud). Shell-free w.r.t. the base: export its filesystem
-      # and read the libicui18n soname; do not assume the base has a shell.
-      # NB: the reducing step (sort -u) consumes all input — no head/grep -q short-circuit,
-      # which under pipefail would SIGPIPE the producer and fail spuriously.
+      - name: Load pinned inputs from versions.env
+        run: |
+          set -euo pipefail
+          set -a; source versions.env; set +a
+          : "${IMAGE_REPO:?set IMAGE_REPO in versions.env}"
+          pg="${{ matrix.target.pg }}"; art="${{ matrix.target.artifact }}"
+          base_var="HARDENED_BASE_${pg}"; : "${!base_var:?no base for PG ${pg}}"
+          # drift guard: engine majors from ENGINE_PG_MAJORS, imagevol major from IMAGEVOL_PG_MAJOR
+          if [ "$art" = engine ]; then
+            case " $ENGINE_PG_MAJORS " in *" $pg "*) : ;; *) echo "::error::engine pg $pg not in ENGINE_PG_MAJORS ($ENGINE_PG_MAJORS)"; exit 1 ;; esac
+          else
+            [ "$pg" = "$IMAGEVOL_PG_MAJOR" ] || { echo "::error::imagevol pg $pg != IMAGEVOL_PG_MAJOR ($IMAGEVOL_PG_MAJOR)"; exit 1; }
+          fi
+          {
+            echo "DOCUMENTDB_TAG=$DOCUMENTDB_TAG"; echo "ICU_MAJOR=$ICU_MAJOR"; echo "ICU_VERSION=$ICU_VERSION"
+            echo "PG_MAJOR=${pg}"; echo "HARDENED_BASE=${!base_var}"; echo "IMAGE_REPO=$IMAGE_REPO"; echo "ARTIFACT=${art}"
+          } >> "$GITHUB_ENV"
+          echo "IMAGE=$(ARTIFACT="$art" PG_MAJOR="$pg" ./build/image-tag.sh)" >> "$GITHUB_ENV"
+
+      # ICU-drift guard: the base has no shell, so export its filesystem and grep the
+      # libicui18n soname from the tar listing. sort -u reads all input to avoid a
+      # SIGPIPE from a short-circuiting grep under pipefail.
       - name: ICU-drift guard
         run: |
           set -euo pipefail
@@ -86,29 +81,34 @@ jobs:
             | grep -oE 'libicui18n\.so\.[0-9]+' | grep -oE '[0-9]+$' | sort -u)
           got="${majors[0]:-}"
           if [ "${#majors[@]}" -ne 1 ] || [ "$got" != "$ICU_MAJOR" ]; then
-            echo "::error::hardened base ICU '${majors[*]:-none}' != pinned $ICU_MAJOR — re-pin ICU_VERSION and rebuild"
+            echo "::error::hardened base ICU '${majors[*]:-none}' != pinned $ICU_MAJOR; re-pin ICU_VERSION and rebuild"
             exit 1
           fi
           echo "ICU-drift guard OK: base ICU $got == pinned $ICU_MAJOR"
 
       - name: Build (Stage A .deb + Stage B ImageVolume image)
-        run: TARGETARCH=${{ matrix.arch }} ./build/build.sh
+        run: |
+          if [ "$ARTIFACT" = engine ]; then
+            TARGETARCH=${{ matrix.arch }} PG_MAJOR=${PG_MAJOR} ./build/build-engine.sh
+          else
+            TARGETARCH=${{ matrix.arch }} PG_MAJOR=${PG_MAJOR} ./build/build.sh
+          fi
 
-      # glibc guard (fails loud): the max GLIBC_x.yy symbol in the built .so must be
-      # <= the base's glibc. objdump output is captured to a variable before grep so a
-      # short-circuiting grep can't SIGPIPE it under pipefail.
+      # glibc guard: the max GLIBC_x.yy symbol in the built .so must be <= the base's
+      # glibc, or the extension won't load. objdump output is captured to a variable
+      # before grep to avoid a SIGPIPE from a short-circuiting grep under pipefail.
       - name: glibc guard
         run: |
           set -euo pipefail
           base="$(docker run --rm --entrypoint sh "$HARDENED_BASE" -c 'ldd --version | head -1 | grep -oE "[0-9]+\.[0-9]+$"')"
           tmp="$(mktemp -d)"
-          dpkg-deb -x .work/deb/*.deb "$tmp"
+          dpkg-deb -x .work/deb-pg${PG_MAJOR}/*.deb "$tmp"
           so="$tmp/usr/lib/postgresql/${PG_MAJOR}/lib/pg_documentdb_core.so"
           syms="$(objdump -T "$so")"
           built="$(grep -oE 'GLIBC_[0-9]+\.[0-9]+' <<<"$syms" | sort -V | tail -1 | cut -d_ -f2)"
           echo "built glibc requirement: $built ; base glibc: $base"
           if [ "$(printf '%s\n%s\n' "$built" "$base" | sort -V | tail -1)" != "$base" ]; then
-            echo "::error::built .so needs glibc $built > base $base — extension will not load"
+            echo "::error::built .so needs glibc $built > base $base; extension will not load"
             exit 1
           fi
           echo "glibc guard OK: built $built <= base $base"
@@ -121,7 +121,11 @@ jobs:
       - name: Verify (CNPG load + CREATE EXTENSION + smoke)
         run: |
           set -euo pipefail
-          EXT_IMAGE="$IMAGE" KIND_EPHEMERAL=1 ./test/verify.sh
+          if [ "$ARTIFACT" = engine ]; then
+            ENGINE_IMAGE="$IMAGE" KIND_EPHEMERAL=1 ./test/verify-engine.sh
+          else
+            EXT_IMAGE="$IMAGE" PG_MAJOR=${PG_MAJOR} KIND_EPHEMERAL=1 ./test/verify.sh
+          fi
 
       - name: Publish on green
         if: ${{ github.event_name != 'pull_request' }}
@@ -131,11 +135,12 @@ jobs:
           docker push "${IMAGE}-${{ matrix.arch }}"
           echo "published ${IMAGE}-${{ matrix.arch }}"
 
-  # Assemble the multi-arch manifest from the per-arch tags that published. arm64 is
-  # required; amd64 is folded in only if its (non-blocking) job published a tag.
+  # Assemble one multi-arch manifest list per PG major from the per-(pg,arch) tags that
+  # published. Runs even if some build cells failed (!cancelled()) so one major cannot deny
+  # another its consumer tag; a major is published only if its required arm64 tag exists.
   manifest:
     needs: build
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -146,25 +151,31 @@ jobs:
         run: |
           set -euo pipefail
           set -a; source versions.env; set +a
-          echo "IMAGE=${IMAGE_REPO}:${DOCUMENTDB_TAG#v}-icu${ICU_MAJOR}" >> "$GITHUB_ENV"
+          echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
+          tags=""
+          for m in $ENGINE_PG_MAJORS; do tags="$tags $(ARTIFACT=engine   PG_MAJOR="$m" ./build/image-tag.sh)"; done
+          tags="$tags $(ARTIFACT=imagevol PG_MAJOR="$IMAGEVOL_PG_MAJOR" ./build/image-tag.sh)"
+          echo "MANIFEST_IMAGES=$tags" >> "$GITHUB_ENV"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create and push manifest list
+      - name: Create and push per-major manifest lists
         run: |
           set -euo pipefail
-          refs=()
-          for arch in arm64 amd64; do
-            if docker manifest inspect "${IMAGE}-${arch}" >/dev/null 2>&1; then
-              refs+=("${IMAGE}-${arch}")
-            else
-              echo "note: ${IMAGE}-${arch} not published (arch skipped or its gate was not green)"
-            fi
+          overall=0
+          for image in $MANIFEST_IMAGES; do
+            refs=()
+            for arch in arm64 amd64; do
+              if docker manifest inspect "${image}-${arch}" >/dev/null 2>&1; then refs+=("${image}-${arch}");
+              else echo "note: ${image}-${arch} not published"; fi
+            done
+            have_arm64=0; for r in "${refs[@]:-}"; do [ "${r##*-}" = arm64 ] && have_arm64=1; done
+            if [ "$have_arm64" != 1 ]; then echo "::error::${image}: required arm64 missing"; overall=1; continue; fi
+            if ! docker manifest create "$image" "${refs[@]}"; then echo "::error::${image}: create failed"; overall=1; continue; fi
+            if ! docker manifest push "$image"; then echo "::error::${image}: push failed"; overall=1; continue; fi
+            echo "published manifest $image -> ${refs[*]}"
           done
-          [ "${#refs[@]}" -ge 1 ] || { echo "::error::no per-arch images published"; exit 1; }
-          docker manifest create "$IMAGE" "${refs[@]}"
-          docker manifest push "$IMAGE"
-          echo "published manifest $IMAGE -> ${refs[*]}"
+          exit $overall
