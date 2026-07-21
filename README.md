@@ -63,7 +63,7 @@ Two supported delivery paths, matching the two artifacts. Both are what CI
 stands up and asserts green on both arches; the only differences here are that
 CI `kind load`s locally-built images (so it sets `pullPolicy: Never`) whereas
 these pull the published tags from GHCR, and CI uses a throwaway 1Gi single
-instance. Replace `0.1.0` with the release you want.
+instance. Replace `0.1.2` with the release you want.
 
 Two settings are load-bearing on every cluster and are easy to miss:
 
@@ -87,8 +87,8 @@ metadata:
 spec:
   instances: 1
   # documentdb + ICU 77 baked into the hardened Minimus fips base.
-  # PG17: postgresql-fips:17.10-0.1.0   PG18: postgresql-fips:18.4-0.1.0
-  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.1.0
+  # PG17: postgresql-fips:17.10-0.1.2   PG18: postgresql-fips:18.4-0.1.2
+  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.1.2
   enableSuperuserAccess: true          # lets you psql -U postgres for the smoke test
   storage:
     size: 10Gi
@@ -141,7 +141,7 @@ spec:
     extensions:
       - name: documentdb
         image:
-          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.1.0
+          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.1.2
         extension_control_path: [share]
         dynamic_library_path: [lib]
         ld_library_path: [lib, system]
@@ -193,94 +193,11 @@ From there the two artifacts diverge:
   `.deb` out as a standalone `/lib` + `/share` + `/system` tree in the shape
   CNPG expects for an `ImageVolume` mount, with no base image involved.
 
-## Migration flow
+## Migrating an existing deployment
 
-The engine images exist to carry documentdb off FerretDB's own operand image
-(`ferretdb/postgres-documentdb`, Debian-based, Postgres uid **999**, Debian
-ICU) and onto the hardened Minimus stack (uid **26**, ICU **77**), ending on
-stock `fips:18` plus the documentdb ImageVolume (Path B above).
-
-This is a **sketch** — rehearse every step against a clone before doing it in
-production. Two mechanically different kinds of transition show up:
-
-- **Major-version bumps inside one vendor/uid/ICU regime** → CNPG declarative
-  major upgrade: change the cluster's `imageName` to the higher-major tag and
-  CNPG runs `pg_upgrade` in place. This needs the extension present in *both*
-  the old and new image, which is exactly why the engine images bake documentdb
-  in.
-- **Crossing the FerretDB → Minimus boundary** changes the Postgres uid
-  (999 → 26) and the ICU major (→ 77) at once. You cannot do that as an
-  in-place operand swap on one `Cluster`: PGDATA on the PVC is owned by uid 999
-  and Postgres refuses to start under uid 26 against a data directory it does
-  not own, and CNPG's `postgresUID`/`postgresGID` are fixed at cluster
-  creation. Cross it by streaming into a **new** cluster whose fresh PVC is
-  created under uid 26.
-
-The chain:
-
-1. **FerretDB 16 → FerretDB 17** — a CNPG declarative major upgrade on
-   FerretDB's own images (stays Debian / uid 999 / Debian ICU). Outside this
-   repo's scope; get to 17 first so the boundary crossing is same-major.
-2. **FerretDB 17 → `postgresql-fips:17.10` engine** — the boundary crossing
-   (uid 999 → 26, ICU → 77). Do it as a **new** cluster cloned from the
-   FerretDB 17 cluster via `bootstrap.pg_basebackup` (configure the source
-   under `externalClusters`):
-   - The new cluster uses CNPG's default uid/gid **26** and provisions its own
-     fresh PVC, so the data is written by uid 26 from the start — no chown.
-   - `pg_basebackup` is a physical clone (same major 17, so the on-disk format
-     is compatible across distros). It copies indexes built under the old ICU,
-     so on the ICU-77 target their recorded collation version is stale. After
-     promotion, per database (`datallowconn` in `pg_database`):
-
-     ```sql
-     ALTER DATABASE "<db>" REFRESH COLLATION VERSION;
-     REINDEX DATABASE "<db>";   -- rebuild collation-dependent indexes
-     ```
-
-   - Reconcile extension versions: FerretDB ships its own documentdb version,
-     this engine ships `DOCUMENTDB_TAG`. If they differ, run
-     `ALTER EXTENSION documentdb UPDATE;` (and likewise for `postgis`,
-     `pg_cron`, `vector`).
-   - Carry `shared_preload_libraries`, `cron.database_name`, and the loopback
-     `trust` pg_hba onto the new cluster.
-   - Cut the application over to the new cluster's service, then retire the
-     FerretDB cluster.
-   - Alternative: a logical `bootstrap.initdb.import` rebuilds schema + data
-     fresh under ICU 77, sidestepping the REINDEX and any extension-ABI skew,
-     at the cost of a full logical copy (more downtime for large data). Pick per
-     data size / downtime budget.
-3. **`postgresql-fips:17.10` → `postgresql-fips:18.4` engine** — a pure major
-   bump, now entirely within Minimus / uid 26 / ICU 77. CNPG declarative major
-   upgrade: change `imageName` to the PG18 engine tag; CNPG runs `pg_upgrade`.
-   documentdb is baked into both engine images, so `pg_upgrade` finds it on both
-   sides. No uid or ICU change — no chown, no collation reindex.
-4. **`postgresql-fips:18.4` engine → stock `fips:18` + documentdb ImageVolume**
-   — a same-major operand swap, same uid (26) and ICU (77). Change `imageName`
-   to the stock hardened `fips:18` base and add the `extensions:` ImageVolume
-   block (Path B). CNPG does a rolling restart; documentdb now loads from the
-   mounted extension image instead of being baked in. If the ImageVolume ships a
-   different documentdb version than was baked in, run
-   `ALTER EXTENSION documentdb UPDATE;`. No pg_upgrade, no chown, no reindex.
-
-End state: stock hardened `fips:18` with documentdb delivered as a versioned
-ImageVolume you can bump independently of the engine.
-
-There's no PG16 engine image: FerretDB already covers 16 and 17, so this repo
-only needs to supply an engine from step 2 onward.
-
-Cross-cutting checklist:
-
-- **uid/gid**: new Minimus clusters use CNPG's default 26/26 — don't set
-  `postgresUID: 999`.
-- **collations**: only the ICU crossing (step 2) needs REFRESH COLLATION
-  VERSION + REINDEX; steps 3–4 stay on ICU 77.
-- **extension versions**: reconcile documentdb / postgis / pg_cron / vector with
-  `ALTER EXTENSION ... UPDATE` after any image whose version differs.
-- **preload + pg_hba + cron.database_name**: carry these on every cluster in the
-  chain.
-- **backups / monitoring / DSNs**: the step-2 cutover is a new cluster with a new
-  name and service — repoint backups, scrape configs, and application
-  connection strings, or front it with a stable Service.
+Moving an existing CNPG cluster off a FerretDB documentdb operand onto this
+stack — including the uid 999 -> 26 and ICU -> 77 boundary — is written up
+separately in [docs/migrating-from-ferretdb.md](docs/migrating-from-ferretdb.md).
 
 ## CI and publishing
 

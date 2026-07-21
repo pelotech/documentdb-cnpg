@@ -47,12 +47,5 @@ there is no multiarch library directory. The build:
 
 ## Migration
 
-FerretDB publishes PostgreSQL + DocumentDB images (Debian bookworm, ICU 72) for
-PG15-17. To move a cluster onto a Minimus PG18 base with the ImageVolume
-extension:
-
-1. FerretDB 16 to 17, using FerretDB's images.
-2. Swap the PG17 engine to this repo's `engine-pg17` image (ICU 72 to 77; run
-   `ALTER DATABASE ... REFRESH COLLATION VERSION` / reindex).
-3. CNPG major upgrade 17 to 18 with `engine-pg18`.
-4. Swap to a stock `fips:18` image plus the ImageVolume extension.
+Moving an existing deployment off a FerretDB documentdb operand onto this stack
+is documented in [migrating-from-ferretdb.md](migrating-from-ferretdb.md).
