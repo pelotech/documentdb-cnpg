@@ -44,13 +44,18 @@ scripts print the full reference. The `-fips` suffix leaves room for an
 unhardened engine variant later.
 
 Engine tags lead with the base's full Postgres version, because CNPG parses the
-engine `imageName` tag to detect major-version upgrades: `postgresql-fips:17.10-<ref>`
-and `postgresql-fips:18.4-<ref>` (a local build is `postgresql-fips:17.10-local`).
-The extension tag carries the major as `extension:pg18-<ref>` and has no
-version-leading constraint.
+engine `imageName` tag to detect major-version upgrades; the baked-in documentdb
+version follows as the second segment, the ICU major as the third, then the build
+ref: `postgresql-fips:17.10-0.114.0-icu77-<ref>` and
+`postgresql-fips:18.4-0.114.0-icu77-<ref>` (a local build is
+`postgresql-fips:17.10-0.114.0-icu77-local`). The extension tag carries the major
+as `extension:pg18-0.114.0-icu77-<ref>`. Leading with the pgver is required:
+CNPG's `version.FromTag` reads only the leading `^(\d\.?)+`, so everything from
+the first `-` on (documentdb version, ICU, ref) is ignored by its major-version
+detection.
 
-The ICU major, documentdb version, and pinned base are recorded as OCI image
-labels (`docker inspect`), not in the tag.
+The pinned base is recorded as an OCI image label (`docker inspect`), not in the
+tag; the documentdb version and ICU major are carried in both the tag and labels.
 
 Both `verify.sh` and `verify-engine.sh` bring up a CNPG cluster, wait for
 `Ready`, assert `CREATE EXTENSION documentdb CASCADE` pulls in `documentdb`,
@@ -87,8 +92,8 @@ metadata:
 spec:
   instances: 1
   # documentdb + ICU 77 baked into the hardened Minimus fips base.
-  # PG17: postgresql-fips:17.10-0.1.2   PG18: postgresql-fips:18.4-0.1.2
-  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.1.2
+  # PG17: postgresql-fips:17.10-0.114.0-icu77-0.1.2   PG18: postgresql-fips:18.4-0.114.0-icu77-0.1.2
+  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.114.0-icu77-0.1.2
   enableSuperuserAccess: true          # lets you psql -U postgres for the smoke test
   storage:
     size: 10Gi
@@ -141,7 +146,7 @@ spec:
     extensions:
       - name: documentdb
         image:
-          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.1.2
+          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu77-0.1.2
         extension_control_path: [share]
         dynamic_library_path: [lib]
         ld_library_path: [lib, system]
@@ -193,6 +198,53 @@ From there the two artifacts diverge:
   `.deb` out as a standalone `/lib` + `/share` + `/system` tree in the shape
   CNPG expects for an `ImageVolume` mount, with no base image involved.
 
+## MongoDB gateway (documentdb-gw)
+
+DocumentDB stores its data as a Postgres extension, but applications talk to it over the
+MongoDB wire protocol. `documentdb-gw` is that translation layer: a small Rust service
+(upstream's `documentdb_gateway`, patched here for TLS + password-file auth) that listens
+for MongoDB clients on `:10260` and turns their requests into `documentdb_api` SQL against
+the cluster.
+
+**Topology.** The gateway runs as a standalone Deployment, not a CNPG sidecar. It connects
+to the cluster's read-write Service (`<cluster>-rw`) as a normal Postgres client, over TLS
+(verify-full) with SCRAM auth. The connection target is passwordless: host/port/db/user
+come from a URL file, the SCRAM password from a mounted secret file, and the server CA from
+another. No credential is ever placed in the URL or in `PGPASSWORD`.
+
+**Image.** `documentdb-gw:<ddb>-<ref>`, where `<ddb>` is the baked-in documentdb version
+(e.g. `0.114.0`) and `<ref>` is `git-<sha>` / a release / `local`. The image links neither
+PG nor ICU, so its tag carries no `pgver` or `icu` segment; it tracks the documentdb
+version only. The TLS + password-file patch is a thin overlay on upstream, to be dropped
+once upstream ships the same capability.
+
+**Build.**
+
+```bash
+source versions.env
+REF=local ./build/build-gateway.sh
+```
+
+**Deploy.** Manifests live in [`docs/gateway/`](docs/gateway/): `deployment.yaml`
+(replicas, probes, secret mounts, non-root uid 26), `service.yaml` (ClusterIP on
+`:10260`), and an optional `networkpolicy.yaml`. Substitute the `<cluster>`,
+`<ns>`, and `<ref>` placeholders (the header comments show a `sed` one-liner),
+then `kubectl apply`. The Deployment mounts the CNPG-generated `<cluster>-app`
+secret (`password`) and `<cluster>-ca` secret (`ca.crt`) into the container.
+
+**Required grant.** The CNPG app role is a plain `LOGIN` role, so before the gateway can
+serve traffic an operator must grant it membership in the documentdb admin role, once,
+against the cluster:
+
+```sql
+GRANT documentdb_admin_role TO "<PG_USER>";
+```
+
+That membership lets the role run the `documentdb_api` CRUD functions. This
+single-service-account model does not need `CREATEROLE`. If you instead let the gateway
+create/drop Mongo users (each maps to a like-named PG role), the role needs `CREATEROLE`
+and the grant `WITH ADMIN OPTION`; see `docs/gateway/deployment.yaml`.
+
 ## Migrating an existing deployment
 
 Moving an existing CNPG cluster off a FerretDB documentdb operand onto this
@@ -205,7 +257,7 @@ separately in [docs/migrating-from-ferretdb.md](docs/migrating-from-ferretdb.md)
 `main.yaml` does the same on push to `main` and then publishes multi-arch images:
 a `git-<short_sha>` tag for each commit, and a release version when release-please
 cuts a release. Both call the reusable `_build.yaml`. Published tags follow the
-scheme above, e.g. `postgresql-fips:17.10-git-1a2b3c4` or `extension:pg18-1.2.0`.
+scheme above, e.g. `postgresql-fips:17.10-0.114.0-icu77-git-1a2b3c4` or `extension:pg18-0.114.0-icu77-1.2.0`.
 Releases are driven by release-please from conventional commit messages, and a
 `lint-title` workflow enforces a conventional pull-request title (squash merges use
 it as the commit message release-please reads).

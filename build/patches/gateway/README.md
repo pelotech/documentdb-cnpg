@@ -1,0 +1,50 @@
+# documentdb-gateway source patches
+
+Carried patches to the upstream `documentdb_gateway` Rust workspace
+(`documentdb/documentdb`, the `pg_documentdb_gw` sub-tree). The gateway is compiled
+from source for the FIPS image, so these apply in the builder stage before `cargo build`.
+
+- Authored against `DOCUMENTDB_TAG=v0.114-0`.
+- Apply from the `pg_documentdb_gw` workspace root (the directory holding `Cargo.toml`,
+  `documentdb_gateway_core/`, `documentdb_macros/`, ...).
+
+Upstream connects to a loopback-trusted Postgres with passwordless local-peer auth and
+`NoTls`. Pointing it at a CloudNativePG cluster over the network needs SCRAM password auth
+over TLS, so the patches add two out-of-band, file-based inputs and wire them through the
+existing connection pools.
+
+- `0001-build-gw-add-postgres-openssl-*` adds the `postgres-openssl` 0.5 dependency. It
+  reuses the `openssl` 0.10 / `openssl-sys` 0.9 already in-tree, so no duplicate and no
+  vendored OpenSSL, keeping the FIPS system-OpenSSL link.
+- `0002-feat-gw-TLS-password-file-auth-*` is the credential + TLS wiring.
+
+Both new inputs are file paths, read at startup:
+
+- `DOCUMENTDB_PG_PASSWORD_FILE`: backend SCRAM password, read after the existing
+  password-rejection guards so `PGPASSWORD`, in-URL passwords, and the JSON
+  `PostgresDataUserPassword` field all stay rejected. A single trailing newline is
+  trimmed. Populates both `postgres_data_user_password` and the new
+  `postgres_system_user_password` field (the system/bootstrap pool authenticates as the
+  separate `postgres_system_user` role and previously passed no password).
+- `DOCUMENTDB_PG_TLS_CA_FILE`: CA PEM anchoring trust for the outbound Postgres TLS
+  connection, distinct from the Mongo-facing listener CA (`CertificateOptions.ca_path`).
+  When unset, the OpenSSL default trust store is used; peer verification is always
+  enforced.
+
+## Applying
+
+From the `pg_documentdb_gw` workspace root, `0001` before `0002`:
+
+```sh
+git apply /path/to/build/patches/gateway/0001-*.patch \
+          /path/to/build/patches/gateway/0002-*.patch
+# or, to preserve authorship/history:
+git am /path/to/build/patches/gateway/*.patch
+```
+
+The final tree compiles and `cargo test -p documentdb_gateway_core` passes.
+
+These are temporary. Upstream has planned `*_FILE` credential indirection; once a tagged
+release ships file-based password and backend TLS configuration, drop these and switch to
+the upstream env keys. Re-verify on each `DOCUMENTDB_TAG` bump: a patch that fails to apply
+means upstream moved the surrounding code or landed the feature.

@@ -6,7 +6,11 @@ repos:
         args: [--allow-multiple-documents]
       - id: check-json
       - id: end-of-file-fixer
+        # .patch files are byte-exact git payloads; whitespace/EOF fixers corrupt them
+        # (strip the "-- " signature line, context-line whitespace). Other hooks still run.
+        exclude: '^build/patches/.*\.patch$'
       - id: trailing-whitespace
+        exclude: '^build/patches/.*\.patch$'
       - id: check-added-large-files
         args: ["--maxkb=500"]
       - id: check-merge-conflict

@@ -1,0 +1,126 @@
+---
+# documentdb-gw: MongoDB-wire gateway in front of a CloudNativePG cluster. Standalone
+# Deployment (not a CNPG sidecar); serves the MongoDB wire protocol on :10260 and connects
+# to the cluster's -rw Service over TLS + SCRAM.
+#
+# Substitute the placeholders before applying, e.g.
+#   sed -e 's/<cluster>/ddb-pg/g' -e 's/<ns>/default/g' docs/gateway/deployment.yaml | kubectl apply -f -
+#   <cluster>  CNPG Cluster name (its -rw Service, -app and -ca secrets)
+#   <ns>       namespace the cluster runs in
+#   <ref>      image ref segment (git-<sha>, a release version, or a local tag)
+#   <PG_USER>  the connecting PG role (here hardcoded to the CNPG app role, <cluster>-app)
+#
+# Run once against the cluster before the gateway can serve traffic: the CNPG app role is
+# a plain LOGIN role with none of the documentdb grants. Membership in documentdb_admin_role
+# lets it run the documentdb_api CRUD functions the gateway calls.
+#
+#     GRANT documentdb_admin_role TO "<PG_USER>";
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: documentdb-gw
+  labels:
+    app.kubernetes.io/name: documentdb-gw
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: documentdb-gw
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: documentdb-gw
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: documentdb-gw
+          # documentdb-gw:<ddb>-<ref>: <ddb> is the baked-in documentdb version, <ref> is
+          # git-<sha> / release / local. Pin by digest in production.
+          image: ghcr.io/pelotech/documentdb-cnpg/documentdb-gw:0.114.0-<ref>
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mongo
+              containerPort: 10260
+          env:
+            # Discrete inputs the entrypoint translates into the DOCUMENTDB_* surface.
+            - name: PG_HOST
+              value: <cluster>-rw.<ns>.svc
+            - name: PG_PORT
+              value: "5432"
+            - name: PG_USER
+              value: <cluster>-app          # the CNPG app role (must hold documentdb_admin_role)
+            - name: PG_DATABASE
+              value: app                     # CNPG default application DB (adjust to your cluster)
+            - name: LISTEN_ADDR
+              value: ":10260"
+            # Mongo-facing listener TLS. Use 'pem' with a mounted cert: 'auto' self-signs
+            # at startup but needs an `openssl` CLI the hardened base omits, so the
+            # entrypoint rejects it. Mount the cert from a Secret (e.g. a cert-manager
+            # Certificate) at /etc/documentdb/tls.
+            - name: LISTENER_TLS
+              value: pem
+            - name: TLS_CERT_FILE
+              value: /etc/documentdb/tls/tls.crt
+            - name: TLS_KEY_FILE
+              value: /etc/documentdb/tls/tls.key
+            - name: LOG_LEVEL
+              value: info
+            # Backend password + CA, sourced from mounted secret files (never inline).
+            - name: PG_PASSWORD_FILE
+              value: /etc/documentdb/pg/password
+            - name: PG_TLS_CA_FILE
+              value: /etc/documentdb/pg/ca.crt
+          volumeMounts:
+            - name: pg-app
+              mountPath: /etc/documentdb/pg/password
+              subPath: password
+              readOnly: true
+            - name: pg-ca
+              mountPath: /etc/documentdb/pg/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: listener-tls
+              mountPath: /etc/documentdb/tls
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 10260
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 10260
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # entrypoint writes the URL file to /tmp
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        # CNPG auto-generates these secrets for the Cluster.
+        - name: pg-app
+          secret:
+            secretName: <cluster>-app       # key `password` = the app role's SCRAM password
+        - name: pg-ca
+          secret:
+            secretName: <cluster>-ca         # key `ca.crt` = the server CA for verify-full
+        # Mongo-facing listener cert (tls.crt + tls.key). Create it yourself or via
+        # a cert-manager Certificate; kubernetes.io/tls Secrets use these two keys.
+        - name: listener-tls
+          secret:
+            secretName: documentdb-gw-listener-tls
