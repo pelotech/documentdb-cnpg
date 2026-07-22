@@ -1,0 +1,76 @@
+From 06ccea2b087bb8116cae948a4126eeef75e63f30 Mon Sep 17 00:00:00 2001
+From: Emmanuel Gomez <emmanuel@gomez.io>
+Date: Wed, 22 Jul 2026 09:21:58 -0700
+Subject: [PATCH 1/2] build(gw): add postgres-openssl for outbound Postgres TLS
+
+Add the `postgres-openssl` crate (0.5) so the gateway can build a
+`MakeTlsConnector` for its backend PostgreSQL connections. It reuses the
+existing `openssl` 0.10 / `openssl-sys` 0.9 already in the tree (no
+duplicate, no vendored OpenSSL), keeping the FIPS system-OpenSSL link.
+
+Part of the documentdb-gw TLS + password source patch (authored against
+DOCUMENTDB_TAG=v0.114-0).
+---
+ Cargo.lock                         | 13 +++++++++++++
+ Cargo.toml                         |  1 +
+ documentdb_gateway_core/Cargo.toml |  1 +
+ 3 files changed, 15 insertions(+)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 4f582a8..4712f1d 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -633,6 +633,7 @@ dependencies = [
+  "opentelemetry",
+  "opentelemetry-otlp",
+  "opentelemetry_sdk",
++ "postgres-openssl",
+  "rand 0.8.6",
+  "regex",
+  "scc",
+@@ -1798,6 +1799,18 @@ dependencies = [
+  "plotters-backend",
+ ]
+ 
++[[package]]
++name = "postgres-openssl"
++version = "0.5.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "06743eefaa1a5c0ef2ccb6d9abf6528790a229eabd62ddcabf9b2a3aeff09fa4"
++dependencies = [
++ "openssl",
++ "tokio",
++ "tokio-openssl",
++ "tokio-postgres",
++]
++
+ [[package]]
+ name = "postgres-protocol"
+ version = "0.6.11"
+diff --git a/Cargo.toml b/Cargo.toml
+index c69fc2d..3273f5a 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -43,6 +43,7 @@ mongodb = { version = "3.6.0", default-features = false, features = [
+ ] }
+ once_cell = "1.21.4"
+ openssl = "0.10.79"
++postgres-openssl = "0.5"
+ opentelemetry = { version = "0.30", features = ["metrics"] }
+ opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic", "metrics"] }
+ opentelemetry_sdk = { version = "0.30", features = ["rt-tokio", "metrics"] }
+diff --git a/documentdb_gateway_core/Cargo.toml b/documentdb_gateway_core/Cargo.toml
+index 5bb8a76..bc898b9 100644
+--- a/documentdb_gateway_core/Cargo.toml
++++ b/documentdb_gateway_core/Cargo.toml
+@@ -26,6 +26,7 @@ either.workspace = true
+ hex.workspace = true
+ once_cell.workspace = true
+ openssl.workspace = true
++postgres-openssl.workspace = true
+ opentelemetry.workspace = true
+ opentelemetry-otlp.workspace = true
+ opentelemetry_sdk.workspace = true
+-- 
+2.49.0
+

@@ -1,0 +1,42 @@
+---
+# Optional NetworkPolicy; only takes effect if a policy-enforcing CNI is installed. It
+# admits MongoDB clients to the gateway on :10260 and restricts gateway egress to the
+# cluster's Postgres pods on 5432 (plus DNS). Substitute <cluster>/<ns> as in
+# deployment.yaml. Tighten the ingress `from` selector to your clients before relying on it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: documentdb-gw
+  labels:
+    app.kubernetes.io/name: documentdb-gw
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: documentdb-gw
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # MongoDB clients -> gateway listener. Narrow `from` to trusted sources.
+    - ports:
+        - port: 10260
+          protocol: TCP
+  egress:
+    # Gateway -> CNPG Postgres pods on 5432. CNPG labels its instance pods with
+    # `cnpg.io/cluster: <cluster>`; this reaches every instance (the -rw Service
+    # routes to the primary, but egress is enforced at the pod level).
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: <cluster>
+      ports:
+        - port: 5432
+          protocol: TCP
+    # DNS resolution for the -rw Service name.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

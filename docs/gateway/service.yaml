@@ -1,0 +1,21 @@
+---
+# ClusterIP Service fronting the documentdb-gw Deployment. Point MongoDB clients
+# at documentdb-gw.<ns>.svc:10260. Substitute <ns> as in deployment.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: documentdb-gw
+  labels:
+    app.kubernetes.io/name: documentdb-gw
+spec:
+  type: ClusterIP
+  # For external access, switch to a LoadBalancer (cloud) or expose via an
+  # L4 ingress / gateway that preserves the raw TCP stream (MongoDB is not HTTP):
+  #   type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: documentdb-gw
+  ports:
+    - name: mongo
+      port: 10260
+      targetPort: 10260
+      protocol: TCP

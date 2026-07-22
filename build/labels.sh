@@ -12,15 +12,25 @@ base_var="HARDENED_BASE_${PG_MAJOR}"; base="${!base_var:?no hardened base pinned
 case "$ARTIFACT" in
   engine)   desc="DocumentDB-embedded PostgreSQL ${PG_MAJOR}, ICU ${ICU_MAJOR}" ;;
   imagevol) desc="DocumentDB CNPG ImageVolume extension for PostgreSQL ${PG_MAJOR}, ICU ${ICU_MAJOR}" ;;
-  *)        echo "unknown ARTIFACT: $ARTIFACT (want engine|imagevol)" >&2; exit 1 ;;
+  gateway)  desc="DocumentDB MongoDB-wire gateway (documentdb ${DOCUMENTDB_TAG#v})" ;;
+  *)        echo "unknown ARTIFACT: $ARTIFACT (want engine|imagevol|gateway)" >&2; exit 1 ;;
 esac
 
-printf '%s\n' \
-  --label "org.opencontainers.image.source=https://github.com/pelotech/documentdb-cnpg" \
-  --label "org.opencontainers.image.url=https://github.com/pelotech/documentdb-cnpg" \
-  --label "org.opencontainers.image.description=${desc}" \
-  --label "org.opencontainers.image.base.name=${base%@*}" \
-  --label "org.opencontainers.image.base.digest=${base#*@}" \
-  --label "com.pelotech.documentdb.icu-major=${ICU_MAJOR}" \
-  --label "com.pelotech.documentdb.version=${DOCUMENTDB_TAG#v}" \
-  --label "com.pelotech.postgres.major=${PG_MAJOR}"
+labels=(
+  --label "org.opencontainers.image.source=https://github.com/pelotech/documentdb-cnpg"
+  --label "org.opencontainers.image.url=https://github.com/pelotech/documentdb-cnpg"
+  --label "org.opencontainers.image.description=${desc}"
+  --label "org.opencontainers.image.base.name=${base%@*}"
+  --label "org.opencontainers.image.base.digest=${base#*@}"
+  --label "com.pelotech.documentdb.version=${DOCUMENTDB_TAG#v}"
+)
+
+# gateway links no ICU and isn't tied to a Postgres major, so it gets neither label.
+if [ "$ARTIFACT" != "gateway" ]; then
+  labels+=(
+    --label "com.pelotech.documentdb.icu-major=${ICU_MAJOR}"
+    --label "com.pelotech.postgres.major=${PG_MAJOR}"
+  )
+fi
+
+printf '%s\n' "${labels[@]}"

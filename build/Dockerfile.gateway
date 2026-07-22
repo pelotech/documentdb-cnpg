@@ -1,0 +1,37 @@
+# Compile the patched upstream documentdb_gateway in a Debian rust builder, then ship the
+# single binary on the hardened MinimOS CloudNativePG fips runtime.
+#
+# OPENSSL_NO_VENDOR=1 makes the binary dynamically link the base's libssl.so.3 /
+# libcrypto.so.3 instead of a vendored OpenSSL, so FIPS crypto is preserved.
+#
+# The Debian builder's ELF interpreter (/lib64/ld-linux-x86-64.so.2 on amd64) resolves
+# through the base's /lib64 -> lib -> usr/lib symlink chain, so no --dynamic-linker
+# override is needed; builder glibc 2.41 <= base glibc 2.43, so symbols resolve forward.
+#
+# The build tree MUST live at a dir literally named pg_documentdb_gw: documentdb_macros'
+# proc-macro hardcodes ../../pg_documentdb_gw/include/... at compile time.
+ARG RUST_BUILDER
+ARG FIPS_BASE
+
+FROM ${RUST_BUILDER} AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libssl-dev pkg-config clang libclang-dev protobuf-compiler git \
+ && rm -rf /var/lib/apt/lists/*
+# Source arrives via a build context (orchestrator: --build-context gw-src=.work/src/pg_documentdb_gw).
+COPY --from=gw-src . /build/pg_documentdb_gw
+COPY build/patches/gateway/*.patch /patches/
+WORKDIR /build/pg_documentdb_gw
+# git apply reads format-patch files directly; no git repo required.
+RUN git apply --verbose /patches/0001-*.patch /patches/0002-*.patch
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    OPENSSL_NO_VENDOR=1 cargo build -p documentdb_gateway --profile release-with-symbols
+
+FROM ${FIPS_BASE}
+COPY --from=builder /build/pg_documentdb_gw/target/release-with-symbols/documentdb_gateway /usr/bin/documentdb_gateway
+COPY --from=builder /build/pg_documentdb_gw/SetupConfiguration.json /etc/documentdb/gateway/SetupConfiguration.json
+# Entrypoint composes the DOCUMENTDB_* env (URL file, password file, CA, listener TLS)
+# from discrete Deployment vars, waits for the CNPG backend, then execs the binary.
+COPY --chmod=0755 build/gateway/entrypoint.sh /usr/local/bin/gateway-entrypoint.sh
+USER 26
+EXPOSE 10260
+ENTRYPOINT ["/usr/local/bin/gateway-entrypoint.sh"]
