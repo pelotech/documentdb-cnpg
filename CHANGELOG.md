@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/pelotech/documentdb-cnpg/compare/v0.1.2...v0.1.3) (2026-07-22)
+
+
+### Features
+
+* hardened documentdb-gw MongoDB gateway image ([#13](https://github.com/pelotech/documentdb-cnpg/issues/13)) ([8f1f825](https://github.com/pelotech/documentdb-cnpg/commit/8f1f8250b86b52b65da0284d1362a42d6c4c823a))
+
 ## [0.1.2](https://github.com/pelotech/documentdb-cnpg/compare/v0.1.1...v0.1.2) (2026-07-21)
 
 
