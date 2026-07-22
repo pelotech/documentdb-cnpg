@@ -130,9 +130,85 @@ jobs:
           docker push "${pub}-${{ matrix.arch }}"
           echo "published ${pub}-${{ matrix.arch }}"
 
+  # The gateway is a different kind of artifact from engine/imagevol: PG- and
+  # ICU-agnostic, compiled from Rust (no .deb), verified with readelf + docker run
+  # (no cluster). It gets its own job rather than conditionals in the matrix above.
+  gateway-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+        include:
+          - { arch: arm64, runner: ubuntu-24.04-arm, experimental: false }
+          - { arch: amd64, runner: ubuntu-24.04, experimental: true }
+    name: gateway-build-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        if: ${{ inputs.publish }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: TARGETARCH=${{ matrix.arch }} ./build/build-gateway.sh
+
+      # FIPS linkage (readelf NEEDED libssl/libcrypto) and that the binary runs on
+      # the base. The mongosh round-trip is the gateway-e2e job.
+      - name: Verify
+        run: REF=local ./test/verify-gateway.sh
+
+      - name: Publish per-arch image
+        if: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          local_image="$(ARTIFACT=gateway REF=local ./build/image-tag.sh)"
+          pub="$(ARTIFACT=gateway REF="$IMAGE_TAG" ./build/image-tag.sh)"
+          docker tag "$local_image" "${pub}-${{ matrix.arch }}"
+          docker push "${pub}-${{ matrix.arch }}"
+          echo "published ${pub}-${{ matrix.arch }}"
+
+  gateway-e2e:
+    name: gateway-e2e (mongosh round-trip)
+    needs: [build, gateway-build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04-arm   # native arm64; the build is proven on arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build engine + gateway (local)
+        run: |
+          set -euo pipefail
+          TARGETARCH=arm64 PG_MAJOR=18 ./build/build-engine.sh
+          TARGETARCH=arm64 ./build/build-gateway.sh
+      - name: Set up kind + kubectl
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Install mongosh
+        run: |
+          set -euo pipefail
+          curl -fsSL https://pgp.mongodb.com/server-8.0.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/mongodb.gpg
+          echo "deb [arch=arm64 signed-by=/usr/share/keyrings/mongodb.gpg] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" \
+            | sudo tee /etc/apt/sources.list.d/mongodb.list >/dev/null
+          sudo apt-get update && sudo apt-get install -y mongodb-mongosh
+      - name: Gateway e2e (mongosh insert/find over TLS+SCRAM)
+        run: |
+          set -euo pipefail
+          ENGINE_IMAGE="$(ARTIFACT=engine PG_MAJOR=18 REF=local ./build/image-tag.sh)"
+          GW_IMAGE="$(ARTIFACT=gateway REF=local ./build/image-tag.sh)"
+          ENGINE_IMAGE="$ENGINE_IMAGE" GW_IMAGE="$GW_IMAGE" ./test/e2e-gateway.sh
+
   manifest:
     if: ${{ inputs.publish && !cancelled() }}
-    needs: build
+    needs: [build, gateway-build]
     runs-on: ubuntu-24.04
     env:
       IMAGE_TAG: ${{ inputs.image_tag }}
@@ -165,4 +241,5 @@ jobs:
           }
           for m in $ENGINE_PG_MAJORS; do assemble engine "$m"; done
           assemble imagevol "$IMAGEVOL_PG_MAJOR"
+          assemble gateway "$IMAGEVOL_PG_MAJOR"   # pg arg unused for gateway (PG-agnostic tag)
           exit $overall
