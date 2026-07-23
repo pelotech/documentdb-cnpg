@@ -1,5 +1,5 @@
 {
   "build/engine": "0.1.2",
   "build/imagevol": "0.1.2",
-  "build/gateway": "0.1.2"
+  "build/gateway": "0.1.3"
 }
