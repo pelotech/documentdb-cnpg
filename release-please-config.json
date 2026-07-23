@@ -1,11 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "simple",
   "include-v-in-tag": true,
+  "include-component-in-tag": true,
+  "separate-pull-requests": true,
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "packages": {
-    ".": {}
+    "build/engine":   { "release-type": "simple", "component": "engine" },
+    "build/imagevol": { "release-type": "simple", "component": "imagevol" },
+    "build/gateway":  { "release-type": "simple", "component": "gateway" }
   },
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
