@@ -49,7 +49,7 @@ The chart supports two modes:
 ```bash
 helm install documentdb-gw \
   oci://ghcr.io/pelotech/documentdb-cnpg/charts/documentdb-gw \
-  --version 0.1.0
+  --version 0.1.1
 ```
 
 This creates the `Cluster/ddb-pg`, provisions the `gwuser` role (via CNPG
@@ -77,7 +77,7 @@ connection details and password/CA secrets:
 ```bash
 helm install documentdb-gw \
   oci://ghcr.io/pelotech/documentdb-cnpg/charts/documentdb-gw \
-  --version 0.1.0 \
+  --version 0.1.1 \
   --set cluster.create=false \
   --set gateway.pg.host=mycluster-rw \
   --set gateway.pg.user=gwuser \
@@ -181,5 +181,5 @@ See [`values.yaml`](values.yaml) for the full, commented value surface.
 The chart is published to GHCR as an OCI artifact:
 
 ```bash
-helm pull oci://ghcr.io/pelotech/documentdb-cnpg/charts/documentdb-gw --version 0.1.0
+helm pull oci://ghcr.io/pelotech/documentdb-cnpg/charts/documentdb-gw --version 0.1.1
 ```
