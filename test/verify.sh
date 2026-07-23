@@ -21,7 +21,7 @@ source versions.env; source build/imagevol/pins.env
 : "${EXT_IMAGE:?pass the built image ref, e.g. EXT_IMAGE=<repo>:<tag>}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 base_var="HARDENED_BASE_${PG_MAJOR}"
-HARDENED_BASE="${!base_var:?no hardened base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in versions.env)}"
+HARDENED_BASE="${!base_var:?no hardened base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in build/imagevol/pins.env)}"
 
 NS=documentdb-ext-verify
 CLUSTER=ddb-pg
