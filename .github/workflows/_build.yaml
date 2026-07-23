@@ -35,8 +35,52 @@ jobs:
       - uses: actions/checkout@v4
       - run: ./build/common/check-pins.sh
 
+  # Classify the diff (plain git, so contents:read is enough) so a chart-only change
+  # skips the engine/imagevol/gateway image matrix, and an image-only change skips
+  # chart-lint. `shared` (CI/config) and workflow_dispatch/schedule force everything.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      run_images: ${{ steps.decide.outputs.run_images }}
+      run_chart: ${{ steps.decide.outputs.run_chart }}
+      run_chart_e2e: ${{ steps.decide.outputs.run_chart_e2e }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) base="$BASE_SHA" ;;
+            push)         base="$BEFORE" ;;
+            *)            base="" ;;   # workflow_dispatch / schedule -> run everything
+          esac
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            files=""; allchanged=1     # unknown base -> treat everything as changed
+          else
+            files="$(git diff --name-only "$base" HEAD)"; allchanged=0
+          fi
+          hit() { [ "$allchanged" = 1 ] && return 0; grep -qE "$1" <<<"$files"; }
+          images=false; chart=false; shared=false
+          hit '^build/|^versions\.env$|^test/verify.*\.sh$|^test/e2e-gateway\.sh$|^test/cluster\.yaml$|^test/engine-cluster\.yaml$' && images=true
+          hit '^charts/|^test/e2e-chart\.sh$' && chart=true
+          hit '^\.github/workflows/|^release-please-config\.json$|^\.pre-commit-config\.yaml$|^\.yamllint$|^\.shellcheckrc$' && shared=true
+          any() { for v in "$@"; do [ "$v" = true ] && { echo true; return; }; done; echo false; }
+          {
+            echo "run_images=$(any "$images" "$shared")"
+            echo "run_chart=$(any "$chart" "$shared")"
+            echo "run_chart_e2e=$(any "$chart" "$images" "$shared")"
+          } >> "$GITHUB_OUTPUT"
+          echo "images=$images chart=$chart shared=$shared (allchanged=$allchanged)" >&2
+
   build:
-    needs: check-pins
+    needs: [check-pins, changes]
+    if: ${{ needs.changes.outputs.run_images == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -158,7 +202,8 @@ jobs:
   # ICU-agnostic, compiled from Rust (no .deb), verified with readelf + docker run
   # (no cluster). It gets its own job rather than conditionals in the matrix above.
   gateway-build:
-    needs: check-pins
+    needs: [check-pins, changes]
+    if: ${{ needs.changes.outputs.run_images == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -202,8 +247,8 @@ jobs:
 
   gateway-e2e:
     name: gateway-e2e (mongosh round-trip)
-    needs: [build, gateway-build]
-    if: ${{ !cancelled() }}
+    needs: [build, gateway-build, changes]
+    if: ${{ !cancelled() && needs.changes.outputs.run_images == 'true' }}
     runs-on: ubuntu-24.04-arm   # native arm64; the build is proven on arm64
     steps:
       - uses: actions/checkout@v4
@@ -232,8 +277,8 @@ jobs:
           ENGINE_IMAGE="$ENGINE_IMAGE" GW_IMAGE="$GW_IMAGE" ./test/e2e-gateway.sh
 
   manifest:
-    if: ${{ inputs.publish && !cancelled() }}
-    needs: [build, gateway-build]
+    if: ${{ inputs.publish && !cancelled() && needs.changes.outputs.run_images == 'true' }}
+    needs: [build, gateway-build, changes]
     runs-on: ubuntu-24.04
     env:
       ENGINE_REF: ${{ inputs.engine_ref }}
@@ -274,6 +319,8 @@ jobs:
           exit $overall
 
   chart-lint:
+    needs: changes
+    if: ${{ needs.changes.outputs.run_chart == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -309,8 +356,8 @@ jobs:
 
   chart-e2e:
     name: chart-e2e (ImageVolume + mongosh round-trip)
-    needs: [build, gateway-build, check-pins]
-    if: ${{ !cancelled() }}
+    needs: [build, gateway-build, check-pins, changes]
+    if: ${{ !cancelled() && needs.changes.outputs.run_chart_e2e == 'true' }}
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
