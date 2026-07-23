@@ -1,5 +1,9 @@
 extends: default
 
+# Helm templates are Go templates, not parseable YAML.
+ignore: |
+  charts/*/templates/
+
 rules:
   line-length: disable
   document-start: disable

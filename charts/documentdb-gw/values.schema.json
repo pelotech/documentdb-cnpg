@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "image": { "type": "object", "properties": {
+      "repository": {"type":"string"}, "tag": {"type":"string"}, "pullPolicy": {"type":"string"} } },
+    "gateway": { "type": "object", "properties": {
+      "replicas": {"type":"integer","minimum":1},
+      "pg": {"type":"object","properties":{
+        "host":{"type":"string"},"port":{"type":"integer"},"database":{"type":"string"},
+        "user":{"type":"string"},"existingSecret":{"type":"string"},"caSecret":{"type":"string"}}},
+      "listenerTLS": {"type":"object","properties":{
+        "mode":{"enum":["generate","certManager","existing"]},
+        "existingSecret":{"type":"string"}}} } },
+    "cluster": { "type": "object", "properties": {
+      "create":{"type":"boolean"},"name":{"type":"string"},"instances":{"type":"integer","minimum":1},
+      "imageName":{"type":"string"},"extensionImage":{"type":"string"},"storage":{"type":"string"},
+      "enableSuperuserAccess":{"type":"boolean"} } }
+  }
+}

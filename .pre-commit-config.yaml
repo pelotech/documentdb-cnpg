@@ -4,6 +4,8 @@ repos:
     hooks:
       - id: check-yaml
         args: [--allow-multiple-documents]
+        # Helm templates are Go templates, not parseable YAML.
+        exclude: '^charts/[^/]+/templates/.*\.(yaml|tpl)$'
       - id: check-json
       - id: end-of-file-fixer
         # .patch files are byte-exact git payloads; whitespace/EOF fixers corrupt them

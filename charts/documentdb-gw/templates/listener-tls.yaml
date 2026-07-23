@@ -1,0 +1,35 @@
+{{- if eq .Values.gateway.listenerTLS.mode "generate" }}
+{{- $svc := include "documentdb-gw.fullname" . }}
+{{- $ns := .Release.Namespace }}
+{{- $cn := printf "%s.%s.svc" $svc $ns }}
+{{- $existing := lookup "v1" "Secret" $ns (include "documentdb-gw.listenerTlsSecretName" .) }}
+{{- $crt := "" }}{{- $key := "" }}
+{{- if and $existing $existing.data (hasKey $existing.data "tls.crt") (hasKey $existing.data "tls.key") }}
+{{-   $crt = index $existing.data "tls.crt" }}{{- $key = index $existing.data "tls.key" }}
+{{- else }}
+{{-   $ca := genSelfSignedCert $cn (list) (list $svc $cn) 3650 }}
+{{-   $crt = b64enc $ca.Cert }}{{- $key = b64enc $ca.Key }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "documentdb-gw.listenerTlsSecretName" . }}
+  labels: {{- include "documentdb-gw.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ $crt }}
+  tls.key: {{ $key }}
+{{- else if eq .Values.gateway.listenerTLS.mode "certManager" }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "documentdb-gw.listenerTlsSecretName" . }}
+  labels: {{- include "documentdb-gw.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "documentdb-gw.listenerTlsSecretName" . }}
+  duration: {{ .Values.gateway.listenerTLS.certManager.duration }}
+  commonName: {{ printf "%s.%s.svc" (include "documentdb-gw.fullname" .) .Release.Namespace }}
+  dnsNames: {{- toYaml (default (list (printf "%s.%s.svc" (include "documentdb-gw.fullname" .) .Release.Namespace)) .Values.gateway.listenerTLS.certManager.dnsNames) | nindent 4 }}
+  issuerRef: {{- toYaml .Values.gateway.listenerTLS.certManager.issuerRef | nindent 4 }}
+{{- end }}
+{{/* mode "existing" authors nothing */}}

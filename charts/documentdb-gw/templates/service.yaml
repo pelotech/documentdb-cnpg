@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "documentdb-gw.fullname" . }}
+  labels:
+    {{- include "documentdb-gw.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.gateway.service.type }}
+  selector:
+    {{- include "documentdb-gw.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: mongo
+      port: {{ .Values.gateway.service.port }}
+      targetPort: 10260
+      protocol: TCP

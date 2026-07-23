@@ -1,0 +1,100 @@
+{{- include "documentdb-gw.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "documentdb-gw.fullname" . }}
+  labels:
+    {{- include "documentdb-gw.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      {{- include "documentdb-gw.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "documentdb-gw.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: documentdb-gw
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: mongo
+              containerPort: 10260
+          env:
+            # Discrete inputs the entrypoint translates into the DOCUMENTDB_* surface.
+            - name: PG_HOST
+              value: {{ include "documentdb-gw.pgHost" . | quote }}
+            - name: PG_PORT
+              value: {{ .Values.gateway.pg.port | quote }}
+            - name: PG_USER
+              value: {{ .Values.gateway.pg.user | quote }}
+            - name: PG_DATABASE
+              value: {{ .Values.gateway.pg.database | quote }}
+            - name: LISTEN_ADDR
+              value: ":10260"
+            # Mongo-facing listener TLS. Use 'pem' with a mounted cert: 'auto' self-signs
+            # at startup but needs an `openssl` CLI the hardened base omits, so the
+            # entrypoint rejects it. Mount the cert from a Secret (e.g. a cert-manager
+            # Certificate) at /etc/documentdb/tls.
+            - name: LISTENER_TLS
+              value: pem
+            - name: TLS_CERT_FILE
+              value: /etc/documentdb/tls/tls.crt
+            - name: TLS_KEY_FILE
+              value: /etc/documentdb/tls/tls.key
+            - name: LOG_LEVEL
+              value: {{ .Values.gateway.logLevel | quote }}
+            # Backend password + CA, sourced from mounted secret files (never inline).
+            - name: PG_PASSWORD_FILE
+              value: /etc/documentdb/pg/password
+            - name: PG_TLS_CA_FILE
+              value: /etc/documentdb/pg/ca.crt
+          volumeMounts:
+            - name: pg-app
+              mountPath: /etc/documentdb/pg/password
+              subPath: password
+              readOnly: true
+            - name: pg-ca
+              mountPath: /etc/documentdb/pg/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: listener-tls
+              mountPath: /etc/documentdb/tls
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 10260
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 10260
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- .Values.gateway.resources | toYaml | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # entrypoint writes the URL file to /tmp
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: pg-app
+          secret:
+            secretName: {{ include "documentdb-gw.pgSecretName" . }}   # key `password` = the backend role's SCRAM password
+        - name: pg-ca
+          secret:
+            secretName: {{ include "documentdb-gw.caSecret" . }}       # key `ca.crt` = the server CA for verify-full
+        - name: listener-tls
+          secret:
+            secretName: {{ include "documentdb-gw.listenerTlsSecretName" . }}

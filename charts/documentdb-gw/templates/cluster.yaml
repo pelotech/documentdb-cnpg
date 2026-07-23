@@ -1,0 +1,43 @@
+{{- if .Values.cluster.create }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.cluster.name }}
+  labels: {{- include "documentdb-gw.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.cluster.instances }}
+  imageName: {{ .Values.cluster.imageName }}
+  enableSuperuserAccess: {{ .Values.cluster.enableSuperuserAccess }}
+  storage:
+    size: {{ .Values.cluster.storage }}
+  postgresql:
+    shared_preload_libraries: [pg_cron, pg_documentdb_core, pg_documentdb]
+    parameters:
+      cron.database_name: postgres
+      max_replication_slots: "10"
+      max_wal_senders: "10"
+    pg_hba:
+      - host all all 127.0.0.1/32 trust
+      - host all all ::1/128 trust
+    extensions:
+      - name: documentdb
+        image:
+          reference: {{ .Values.cluster.extensionImage }}
+          pullPolicy: {{ .Values.cluster.extensionPullPolicy }}
+        extension_control_path: [share]
+        dynamic_library_path: [lib]
+        ld_library_path: [lib, system]
+  managed:
+    roles:
+      - name: {{ .Values.gateway.pg.user }}
+        ensure: present
+        login: true
+        inRoles: [documentdb_admin_role]
+        passwordSecret:
+          name: {{ include "documentdb-gw.pgSecretName" . }}
+  bootstrap:
+    initdb:
+      database: postgres
+      postInitSQL:
+        - "CREATE EXTENSION IF NOT EXISTS documentdb CASCADE;"
+{{- end }}
