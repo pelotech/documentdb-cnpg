@@ -245,6 +245,28 @@ single-service-account model does not need `CREATEROLE`. If you instead let the 
 create/drop Mongo users (each maps to a like-named PG role), the role needs `CREATEROLE`
 and the grant `WITH ADMIN OPTION`; see `docs/gateway/deployment.yaml`.
 
+## Helm chart
+
+The gateway and an optional backing cluster also ship as a Helm chart at
+[`charts/documentdb-gw/`](charts/documentdb-gw/), published to GHCR as an OCI
+artifact at `oci://ghcr.io/pelotech/documentdb-cnpg/charts/documentdb-gw`. It
+renders the gateway `Deployment`/`Service`/listener-TLS always, and — with
+`cluster.create=true` (the default) — a CNPG ImageVolume `Cluster`, the
+`documentdb_gw` managed role, and its generated-password secret, so a single
+install stands the whole stack up:
+
+```bash
+helm install documentdb-gw \
+  oci://ghcr.io/pelotech/documentdb-cnpg/charts/documentdb-gw \
+  --version 0.1.0
+```
+
+Full bring-up needs Kubernetes >= 1.35 with the `ImageVolume` feature gate and
+CNPG >= 1.27. Set `cluster.create=false` to attach the gateway to a cluster you
+already run. See the [chart README](charts/documentdb-gw/README.md) for both
+install modes, the values reference, listener-TLS options, and the attach-mode
+`GRANT documentdb_admin_role` prerequisite.
+
 ## Migrating an existing deployment
 
 Moving an existing CNPG cluster off a FerretDB documentdb operand onto this

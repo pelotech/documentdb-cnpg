@@ -1,0 +1,46 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/pelotech/documentdb-cnpg/documentdb-gw
+  tag: ""                 # empty -> .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+gateway:
+  replicas: 2
+  logLevel: info
+  service:
+    type: ClusterIP
+    port: 10260           # Service port only; the container always listens on :10260
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  pg:
+    host: ""              # empty -> "<cluster.name>-rw"
+    port: 5432
+    database: postgres    # create mode installs documentdb in `postgres`; attach mode: set to your documentdb database
+    user: gwuser          # must NOT start with a gateway BlockedRolePrefix (documentdb, citus, ...) or auth is rejected
+    existingSecret: ""    # attach mode: secret with key `password`; empty -> chart-managed (create mode)
+    caSecret: ""          # empty -> "<cluster.name>-ca"
+  listenerTLS:
+    mode: generate        # generate | certManager | existing
+    existingSecret: ""
+    certManager:
+      issuerRef: {}       # {name, kind, group}
+      duration: 2160h
+      dnsNames: []
+
+networkPolicy:
+  enabled: false
+  clientNamespaceSelector: {}
+
+cluster:
+  create: true
+  name: ddb-pg
+  instances: 1
+  # KEEP imageName in sync with HARDENED_BASE_18 in build/imagevol/pins.env when adopting a new base.
+  imageName: reg.mini.dev/cloudnative-pg-postgresql-fips:18.4@sha256:9bbeaf6f3dc096cea12a5ff5112ffa81e76c9c4c86b49d765579ed71ea55db31
+  extensionImage: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu77-0.1.3
+  extensionPullPolicy: IfNotPresent
+  storage: 1Gi
+  enableSuperuserAccess: false

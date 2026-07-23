@@ -1,0 +1,27 @@
+DocumentDB gateway "{{ include "documentdb-gw.fullname" . }}" is installed.
+
+MongoDB clients reach the gateway (in-cluster) at:
+
+    {{ include "documentdb-gw.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port }}
+
+To try it from your workstation, port-forward and connect with mongosh:
+
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "documentdb-gw.fullname" . }} 10260:{{ .Values.gateway.service.port }}
+
+    mongosh "mongodb://{{ .Values.gateway.pg.user }}:<password>@localhost:10260/?tls=true&tlsAllowInvalidCertificates=true&directConnection=true"
+
+{{- if .Values.cluster.create }}
+
+This release also creates a CloudNativePG ImageVolume Cluster ("{{ .Values.cluster.name }}").
+The gateway password is chart-managed; read it with:
+
+    kubectl get secret -n {{ .Release.Namespace }} {{ include "documentdb-gw.pgSecretName" . }} -o jsonpath='{.data.password}' | base64 -d
+
+NOTE: cluster.create=true needs Kubernetes >= 1.35 with the ImageVolume feature gate enabled.
+{{- else }}
+
+Attach mode (cluster.create=false): the gateway connects to an existing cluster.
+Ensure the backend role "{{ .Values.gateway.pg.user }}" holds documentdb_admin_role:
+
+    GRANT documentdb_admin_role TO "{{ .Values.gateway.pg.user }}";
+{{- end }}
