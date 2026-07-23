@@ -2,5 +2,5 @@
   "build/engine": "0.1.3",
   "build/gateway": "0.1.3",
   "build/imagevol": "0.1.3",
-  "charts/documentdb-gw": "0.1.0"
+  "charts/documentdb-gw": "0.1.1"
 }
