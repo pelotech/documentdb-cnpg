@@ -7,13 +7,28 @@ on:
         description: push per-arch images and assemble manifests
         type: boolean
         default: false
-      image_tag:
-        description: ref for published tags (git-<sha> or a release version)
+      engine_ref:
+        description: ref for the engine image tag (git-<sha> or a release version)
+        type: string
+        default: ""
+      imagevol_ref:
+        description: ref for the imagevol image tag
+        type: string
+        default: ""
+      gateway_ref:
+        description: ref for the gateway image tag
         type: string
         default: ""
 
 jobs:
+  check-pins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./build/common/check-pins.sh
+
   build:
+    needs: check-pins
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +46,7 @@ jobs:
     # amd64 is unproven; non-blocking (continue-on-error) until it has its own verify pass.
     continue-on-error: ${{ matrix.experimental }}
     env:
-      IMAGE_TAG: ${{ inputs.image_tag }}
+      IMAGE_TAG: ${{ matrix.target.artifact == 'engine' && inputs.engine_ref || inputs.imagevol_ref }}
     steps:
       - uses: actions/checkout@v4
 
@@ -134,6 +149,7 @@ jobs:
   # ICU-agnostic, compiled from Rust (no .deb), verified with readelf + docker run
   # (no cluster). It gets its own job rather than conditionals in the matrix above.
   gateway-build:
+    needs: check-pins
     strategy:
       fail-fast: false
       matrix:
@@ -145,7 +161,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental }}
     env:
-      IMAGE_TAG: ${{ inputs.image_tag }}
+      IMAGE_TAG: ${{ inputs.gateway_ref }}
     steps:
       - uses: actions/checkout@v4
 
@@ -211,7 +227,9 @@ jobs:
     needs: [build, gateway-build]
     runs-on: ubuntu-24.04
     env:
-      IMAGE_TAG: ${{ inputs.image_tag }}
+      ENGINE_REF: ${{ inputs.engine_ref }}
+      IMAGEVOL_REF: ${{ inputs.imagevol_ref }}
+      GATEWAY_REF: ${{ inputs.gateway_ref }}
     steps:
       - uses: actions/checkout@v4
       - name: Log in to GHCR
@@ -226,7 +244,9 @@ jobs:
           set -a; source build/engine/pins.env; source build/imagevol/pins.env; set +a
           overall=0
           assemble() {
-            local image; image="$(ARTIFACT="$1" PG_MAJOR="$2" REF="$IMAGE_TAG" ./build/common/image-tag.sh)"
+            local ref
+            case "$1" in engine) ref="$ENGINE_REF" ;; imagevol) ref="$IMAGEVOL_REF" ;; gateway) ref="$GATEWAY_REF" ;; esac
+            local image; image="$(ARTIFACT="$1" PG_MAJOR="$2" REF="$ref" ./build/common/image-tag.sh)"
             local refs=()
             for arch in arm64 amd64; do
               if docker manifest inspect "${image}-${arch}" >/dev/null 2>&1; then refs+=("${image}-${arch}");
