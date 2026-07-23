@@ -3,7 +3,7 @@ name: documentdb-gw
 description: MongoDB-wire DocumentDB gateway for CloudNativePG, with an optional
   ImageVolume cluster
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "0.114.0-0.1.3" # gateway image tag; bump when adopting a newer gateway build
 # No global kubeVersion: the k8s >= 1.35 (ImageVolume) requirement applies only to
 # cluster.create=true and is enforced conditionally by the chart (see _helpers.tpl).
