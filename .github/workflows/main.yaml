@@ -48,6 +48,8 @@ jobs:
       engine_ref: ${{ steps.refs.outputs.engine_ref }}
       imagevol_ref: ${{ steps.refs.outputs.imagevol_ref }}
       gateway_ref: ${{ steps.refs.outputs.gateway_ref }}
+      chart_version: ${{ steps.refs.outputs.chart_version }}
+      chart_released: ${{ steps.refs.outputs.chart_released }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -64,6 +66,8 @@ jobs:
           IMAGEVOL_VERSION: ${{ steps.release.outputs['build/imagevol--version'] }}
           GATEWAY_CREATED: ${{ steps.release.outputs['build/gateway--release_created'] }}
           GATEWAY_VERSION: ${{ steps.release.outputs['build/gateway--version'] }}
+          CHART_CREATED: ${{ steps.release.outputs['charts/documentdb-gw--release_created'] }}
+          CHART_VERSION: ${{ steps.release.outputs['charts/documentdb-gw--version'] }}
         run: |
           set -euo pipefail
           sha="git-$(git rev-parse --short HEAD)"
@@ -72,6 +76,8 @@ jobs:
             emit "$ENGINE_CREATED"   "$ENGINE_VERSION"   engine_ref
             emit "$IMAGEVOL_CREATED" "$IMAGEVOL_VERSION" imagevol_ref
             emit "$GATEWAY_CREATED"  "$GATEWAY_VERSION"  gateway_ref
+            echo "chart_released=${CHART_CREATED:-false}"
+            echo "chart_version=${CHART_VERSION}"
           } >> "$GITHUB_OUTPUT"
 
   # push / workflow_dispatch build and publish; scheduled runs build and verify only.
@@ -87,3 +93,5 @@ jobs:
       engine_ref: ${{ needs.release-please.outputs.engine_ref }}
       imagevol_ref: ${{ needs.release-please.outputs.imagevol_ref }}
       gateway_ref: ${{ needs.release-please.outputs.gateway_ref }}
+      chart_version: ${{ needs.release-please.outputs.chart_version }}
+      chart_released: ${{ needs.release-please.outputs.chart_released == 'true' }}

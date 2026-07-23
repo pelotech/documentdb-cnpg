@@ -19,6 +19,14 @@ on:
         description: ref for the gateway image tag
         type: string
         default: ""
+      chart_version:
+        description: released chart version (empty when no chart release)
+        type: string
+        default: ""
+      chart_released:
+        description: whether release-please cut a chart release this run
+        type: boolean
+        default: false
 
 jobs:
   check-pins:
@@ -264,3 +272,90 @@ jobs:
           assemble imagevol "$IMAGEVOL_PG_MAJOR"
           assemble gateway "$IMAGEVOL_PG_MAJOR"   # pg arg unused for gateway (PG-agnostic tag)
           exit $overall
+
+  chart-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v4.1.0 }
+      - name: helm lint
+        run: helm lint charts/documentdb-gw
+      - name: base-digest drift (non-blocking)
+        run: |
+          set -euo pipefail
+          set -a; source build/imagevol/pins.env; set +a
+          want="$HARDENED_BASE_18"
+          got="$(helm template t charts/documentdb-gw --set cluster.create=true \
+                 | awk '/imageName:/{print $2; exit}')"
+          [ "$got" = "$want" ] || echo "::warning::chart cluster.imageName ($got) != HARDENED_BASE_18 ($want) — re-pin the chart when adopting a new base"
+      - name: helm template + kubeconform (both modes, all TLS modes)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          render() { helm template t charts/documentdb-gw "$@"; }
+          # CNPG CRDs aren't in kubeconform's default schemas; skip those kinds, validate the rest.
+          KC=(./kubeconform -strict -ignore-missing-schemas -skip Cluster,Certificate)
+          render --set cluster.create=true | "${KC[@]}"
+          render --set cluster.create=false --set gateway.pg.existingSecret=s \
+                 --set gateway.pg.host=x-rw --set gateway.pg.caSecret=c | "${KC[@]}"
+          for m in generate existing certManager; do
+            render --set cluster.create=false --set gateway.pg.existingSecret=s \
+                   --set gateway.pg.host=x-rw --set gateway.pg.caSecret=c \
+                   --set gateway.listenerTLS.mode=$m --set gateway.listenerTLS.existingSecret=lt \
+                   --set gateway.listenerTLS.certManager.issuerRef.name=ca >/dev/null
+          done
+          echo "chart-lint OK"
+
+  chart-e2e:
+    name: chart-e2e (ImageVolume + mongosh round-trip)
+    needs: [build, gateway-build, check-pins]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v4.1.0 }
+      - name: Build imagevol + gateway (local)
+        run: |
+          set -euo pipefail
+          TARGETARCH=arm64 PG_MAJOR=18 ./build/imagevol/build.sh
+          TARGETARCH=arm64 ./build/gateway/build-gateway.sh
+      - name: Set up kind + kubectl
+        uses: helm/kind-action@v1
+        with: { install_only: true }
+      - name: Install mongosh
+        run: |
+          set -euo pipefail
+          curl -fsSL https://pgp.mongodb.com/server-8.0.asc | sudo gpg --dearmor -o /usr/share/keyrings/mongodb.gpg
+          echo "deb [arch=arm64 signed-by=/usr/share/keyrings/mongodb.gpg] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb.list >/dev/null
+          sudo apt-get update && sudo apt-get install -y mongodb-mongosh
+      - name: Chart e2e
+        run: |
+          set -euo pipefail
+          set -a; source build/imagevol/pins.env; set +a
+          EXT_IMAGE="$(ARTIFACT=imagevol PG_MAJOR=18 REF=local ./build/common/image-tag.sh)"
+          GW_IMAGE="$(ARTIFACT=gateway REF=local ./build/common/image-tag.sh)"
+          EXT_IMAGE="$EXT_IMAGE" GW_IMAGE="$GW_IMAGE" BASE_IMAGE="$HARDENED_BASE_18" ./test/e2e-chart.sh
+
+  chart-publish:
+    if: ${{ inputs.publish && inputs.chart_released }}
+    needs: [chart-lint, chart-e2e]
+    runs-on: ubuntu-24.04
+    # No job-level permissions: a reusable-workflow job cannot request more than the
+    # caller grants, and GitHub validates that at startup regardless of `if:`. Inherit
+    # the caller's grant instead (main.yaml grants packages: write when publishing).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v4.1.0 }
+      - name: Package + push to OCI
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHART_VERSION: ${{ inputs.chart_version }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GHCR_USER" --password-stdin
+          helm package charts/documentdb-gw --version "$CHART_VERSION"
+          helm push "documentdb-gw-${CHART_VERSION}.tgz" oci://ghcr.io/pelotech/documentdb-cnpg/charts
