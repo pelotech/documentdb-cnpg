@@ -21,7 +21,7 @@ jobs:
       - name: Compare pinned base digests to the live tags
         run: |
           set -euo pipefail
-          set -a; source versions.env; set +a
+          set -a; source build/engine/pins.env; source build/imagevol/pins.env; set +a
           drift=0
           for m in $(printf '%s\n' $ENGINE_PG_MAJORS "$IMAGEVOL_PG_MAJOR" | sort -u); do
             var="HARDENED_BASE_$m"; ref="${!var}"
@@ -45,7 +45,9 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      engine_ref: ${{ steps.refs.outputs.engine_ref }}
+      imagevol_ref: ${{ steps.refs.outputs.imagevol_ref }}
+      gateway_ref: ${{ steps.refs.outputs.gateway_ref }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -54,13 +56,23 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       - uses: actions/checkout@v4
-      - id: tag
+      - id: refs
+        env:
+          ENGINE_CREATED: ${{ steps.release.outputs['build/engine--release_created'] }}
+          ENGINE_VERSION: ${{ steps.release.outputs['build/engine--version'] }}
+          IMAGEVOL_CREATED: ${{ steps.release.outputs['build/imagevol--release_created'] }}
+          IMAGEVOL_VERSION: ${{ steps.release.outputs['build/imagevol--version'] }}
+          GATEWAY_CREATED: ${{ steps.release.outputs['build/gateway--release_created'] }}
+          GATEWAY_VERSION: ${{ steps.release.outputs['build/gateway--version'] }}
         run: |
-          if [ "${{ steps.release.outputs.releases_created }}" = "true" ]; then
-            echo "tag=${{ steps.release.outputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=git-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          sha="git-$(git rev-parse --short HEAD)"
+          emit() { if [ "$1" = "true" ]; then echo "$3=$2"; else echo "$3=$sha"; fi; }
+          {
+            emit "$ENGINE_CREATED"   "$ENGINE_VERSION"   engine_ref
+            emit "$IMAGEVOL_CREATED" "$IMAGEVOL_VERSION" imagevol_ref
+            emit "$GATEWAY_CREATED"  "$GATEWAY_VERSION"  gateway_ref
+          } >> "$GITHUB_OUTPUT"
 
   # push / workflow_dispatch build and publish; scheduled runs build and verify only.
   build:
@@ -72,4 +84,6 @@ jobs:
       packages: write
     with:
       publish: ${{ github.event_name != 'schedule' }}
-      image_tag: ${{ needs.release-please.outputs.tag }}
+      engine_ref: ${{ needs.release-please.outputs.engine_ref }}
+      imagevol_ref: ${{ needs.release-please.outputs.imagevol_ref }}
+      gateway_ref: ${{ needs.release-please.outputs.gateway_ref }}

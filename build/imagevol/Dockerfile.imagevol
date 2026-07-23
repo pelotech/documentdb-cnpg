@@ -12,7 +12,7 @@
 ARG DDB_BUILDER
 FROM ${DDB_BUILDER} AS deps
 COPY --from=deb-stage / /tmp/deb/
-COPY build/gen_system.sh /gen_system.sh
+COPY build/common/gen_system.sh /gen_system.sh
 
 # Install the extension .deb; -f install backfills any missing runtime dep.
 RUN dpkg -i /tmp/deb/*.deb || (apt-get update && apt-get -y -f install && dpkg -i /tmp/deb/*.deb)

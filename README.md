@@ -27,14 +27,14 @@ verify whichever artifact you need.
 Engine image:
 
 ```bash
-PG_MAJOR=17 ./build/build-engine.sh
+PG_MAJOR=17 ./build/engine/build-engine.sh
 ENGINE_IMAGE=<printed tag> KIND_EPHEMERAL=1 ./test/verify-engine.sh
 ```
 
 ImageVolume extension:
 
 ```bash
-PG_MAJOR=18 ./build/build.sh
+PG_MAJOR=18 ./build/imagevol/build.sh
 EXT_IMAGE=<printed tag> KIND_EPHEMERAL=1 ./test/verify.sh
 ```
 
@@ -181,7 +181,7 @@ kubectl exec "$primary" -c postgres -- psql -U postgres -d postgres -tAqc \
 
 ## How it works
 
-Both artifacts share a common Stage A (`build/stage-a.sh`, `build/Dockerfile.deb`):
+Both artifacts share a common Stage A (`build/common/stage-a.sh`, `build/common/Dockerfile.deb`):
 it takes the pinned upstream `documentdb/documentdb` source, builds it with
 upstream's own `packaging/deb/Dockerfile-deb`, links it against an
 ICU-77-from-source install, and emits a `.deb`. A build-time `objdump` check
@@ -189,12 +189,12 @@ confirms the result links `ucol_*_77` symbols and nothing from ICU 76.
 
 From there the two artifacts diverge:
 
-- **Engine** (`build/build-engine.sh`, `Dockerfile.engine`): installs the
+- **Engine** (`build/engine/build-engine.sh`, `build/engine/Dockerfile.engine`): installs the
   `.deb` straight into `FROM fips:${PG_MAJOR}`, patches module RPATHs with
   `patchelf` so dependencies resolve without `ldconfig`, and bundles the
   extension's non-core shared library dependencies alongside the base's own
   `/system` libraries without shadowing its FIPS-certified crypto.
-- **ImageVolume** (`build/build.sh`, `Dockerfile.imagevol`): lays the same
+- **ImageVolume** (`build/imagevol/build.sh`, `build/imagevol/Dockerfile.imagevol`): lays the same
   `.deb` out as a standalone `/lib` + `/share` + `/system` tree in the shape
   CNPG expects for an `ImageVolume` mount, with no base image involved.
 
@@ -221,8 +221,8 @@ once upstream ships the same capability.
 **Build.**
 
 ```bash
-source versions.env
-REF=local ./build/build-gateway.sh
+source build/gateway/pins.env
+REF=local ./build/gateway/build-gateway.sh
 ```
 
 **Deploy.** Manifests live in [`docs/gateway/`](docs/gateway/): `deployment.yaml`
@@ -268,6 +268,15 @@ run if a tag has moved, as a prompt to re-pin.
 
 ## Pins
 
-All reproducibility inputs - the documentdb source tag, ICU version, hardened
-base digests, and which Postgres majors get engine vs. ImageVolume builds -
-live in `versions.env`.
+Genuinely shared values — `IMAGE_REPO` and `DEFAULT_PG_MAJOR` — live in
+`versions.env`. The per-artifact reproducibility inputs — the documentdb source
+tag, ICU version, hardened base digests, rust builder, and which Postgres majors
+get engine vs. ImageVolume builds — live in each artifact's
+`build/<artifact>/pins.env`. The values that must agree across artifacts
+(documentdb tag, ICU, the shared base-18 digest) are kept in lockstep by
+`build/common/check-pins.sh`, which runs as a pre-commit hook and gates CI.
+
+Because release-please routes version bumps by file path, changes under
+`build/common/` are release-neutral: they match no release-please package path
+(`build/engine`, `build/imagevol`, `build/gateway`) and so cut no release on
+their own.

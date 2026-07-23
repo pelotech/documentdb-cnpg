@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 # Source arrives via a build context (orchestrator: --build-context gw-src=.work/src/pg_documentdb_gw).
 COPY --from=gw-src . /build/pg_documentdb_gw
-COPY build/patches/gateway/*.patch /patches/
+COPY build/gateway/patches/*.patch /patches/
 WORKDIR /build/pg_documentdb_gw
 # git apply reads format-patch files directly; no git repo required.
 RUN git apply --verbose /patches/0001-*.patch /patches/0002-*.patch

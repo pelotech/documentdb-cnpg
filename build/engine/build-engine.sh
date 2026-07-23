@@ -2,8 +2,11 @@
 # Build a documentdb-embedded engine image for one Postgres major:
 # Stage A (.deb via stage-a.sh) -> bake (Dockerfile.engine) into fips:${PG_MAJOR}.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
+set -a
 source versions.env
+source "build/engine/pins.env"
+set +a
 : "${IMAGE_REPO:?set IMAGE_REPO in versions.env}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 
@@ -16,12 +19,12 @@ plat="linux/${TARGETARCH:-$host_arch}"
 builder="ddb-builder:pg${PG_MAJOR}"
 
 # CNPG-parseable image tag (embeds the base's PG version) from the single source of truth.
-image="$(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/image-tag.sh)"
+image="$(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/common/image-tag.sh)"
 
-debdir="$(PG_MAJOR="$PG_MAJOR" TARGETARCH="${TARGETARCH:-}" ./build/stage-a.sh)"
-mapfile -t labels < <(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/labels.sh)
+debdir="$(PG_MAJOR="$PG_MAJOR" TARGETARCH="${TARGETARCH:-}" ./build/common/stage-a.sh)"
+mapfile -t labels < <(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/common/labels.sh)
 
-docker build --platform "$plat" -f build/Dockerfile.engine \
+docker build --platform "$plat" -f build/engine/Dockerfile.engine \
   --build-arg DDB_BUILDER="$builder" \
   --build-arg FIPS_BASE="$FIPS_BASE" \
   --build-arg PG_MAJOR="$PG_MAJOR" \

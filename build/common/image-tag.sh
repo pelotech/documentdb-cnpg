@@ -17,8 +17,9 @@
 # REF is a git-sha ("git-1a2b3c4"), a release version, or "local" (default) for a
 # local build/verify. The engine pgver is read by running the pinned base.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 source versions.env
+source "build/${ARTIFACT:-engine}/pins.env"
 : "${IMAGE_REPO:?set IMAGE_REPO in versions.env}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 ARTIFACT="${ARTIFACT:-engine}"
