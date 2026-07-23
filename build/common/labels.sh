@@ -3,8 +3,9 @@
 # that does not belong in the tag: ICU major, documentdb version, target base, and
 # Postgres major. Consumed via `mapfile` so values with spaces stay intact.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 source versions.env
+source "build/${ARTIFACT:-engine}/pins.env"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 ARTIFACT="${ARTIFACT:-engine}"
 base_var="HARDENED_BASE_${PG_MAJOR}"; base="${!base_var:?no hardened base pinned for PG ${PG_MAJOR}}"

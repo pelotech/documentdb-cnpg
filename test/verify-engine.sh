@@ -5,7 +5,7 @@
 # Usage:  ENGINE_IMAGE=<built engine ref> [KIND_EPHEMERAL=1] ./test/verify-engine.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-source versions.env
+source versions.env; source build/engine/pins.env
 : "${ENGINE_IMAGE:?pass the built engine image ref, e.g. ENGINE_IMAGE=<repo>:<pgver>-documentdb...}"
 
 NS=documentdb-engine-verify

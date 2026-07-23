@@ -11,7 +11,7 @@ ARG PG_MAJOR
 FROM ${DDB_BUILDER} AS deps
 ARG PG_MAJOR
 COPY --from=deb-stage / /tmp/deb/
-COPY build/gen_system.sh /gen_system.sh
+COPY build/common/gen_system.sh /gen_system.sh
 RUN dpkg -i /tmp/deb/*.deb || (apt-get update && apt-get -y -f install && dpkg -i /tmp/deb/*.deb)
 RUN apt-get update && apt-get install -y --no-install-recommends patchelf >/dev/null
 RUN set -euo pipefail; \

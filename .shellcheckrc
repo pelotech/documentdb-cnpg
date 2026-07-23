@@ -1,2 +1,3 @@
-# versions.env is sourced at runtime but not available to the linter.
-disable=SC1091
+# versions.env and build/<artifact>/pins.env are sourced at runtime but not available to
+# the linter; the pins path is artifact-dynamic (build/${ARTIFACT}/pins.env), so also SC1090.
+disable=SC1091,SC1090

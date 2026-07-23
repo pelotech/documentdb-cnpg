@@ -36,10 +36,10 @@ Both new inputs are file paths, read at startup:
 From the `pg_documentdb_gw` workspace root, `0001` before `0002`:
 
 ```sh
-git apply /path/to/build/patches/gateway/0001-*.patch \
-          /path/to/build/patches/gateway/0002-*.patch
+git apply /path/to/build/gateway/patches/0001-*.patch \
+          /path/to/build/gateway/patches/0002-*.patch
 # or, to preserve authorship/history:
-git am /path/to/build/patches/gateway/*.patch
+git am /path/to/build/gateway/patches/*.patch
 ```
 
 The final tree compiles and `cargo test -p documentdb_gateway_core` passes.

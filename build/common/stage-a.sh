@@ -3,9 +3,10 @@
 # Fetches pinned documentdb source, builds the upstream deb-builder image (ddb-builder:pg${M}),
 # then Stage A (Dockerfile.deb) -> a local dir. Prints the output dir on stdout; logs to stderr.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source versions.env
-: "${IMAGE_REPO:?set IMAGE_REPO in versions.env}"
+cd "$(dirname "$0")/../.."
+: "${IMAGE_REPO:?IMAGE_REPO must be exported by the calling build script}"
+: "${DOCUMENTDB_TAG:?DOCUMENTDB_TAG must be exported by the calling build script}"
+: "${ICU_VERSION:?ICU_VERSION must be exported by the calling build script}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 
 host_arch="$(uname -m)"
@@ -40,7 +41,7 @@ docker build --platform "$plat" -f "$work/src/packaging/deb/Dockerfile-deb" \
 
 # 3. Stage A -> .deb (per-major output dir)
 rm -rf "$debdir"
-docker build --platform "$plat" -f build/Dockerfile.deb \
+docker build --platform "$plat" -f build/common/Dockerfile.deb \
   --build-arg DDB_BUILDER="$builder" \
   --build-arg ICU_VERSION="$ICU_VERSION" \
   --build-arg DOCUMENTDB_TAG="$DOCUMENTDB_TAG" \

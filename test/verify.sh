@@ -17,7 +17,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-source versions.env
+source versions.env; source build/imagevol/pins.env
 : "${EXT_IMAGE:?pass the built image ref, e.g. EXT_IMAGE=<repo>:<tag>}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 base_var="HARDENED_BASE_${PG_MAJOR}"

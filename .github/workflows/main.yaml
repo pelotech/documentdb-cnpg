@@ -21,7 +21,7 @@ jobs:
       - name: Compare pinned base digests to the live tags
         run: |
           set -euo pipefail
-          set -a; source versions.env; set +a
+          set -a; source build/engine/pins.env; source build/imagevol/pins.env; set +a
           drift=0
           for m in $(printf '%s\n' $ENGINE_PG_MAJORS "$IMAGEVOL_PG_MAJOR" | sort -u); do
             var="HARDENED_BASE_$m"; ref="${!var}"

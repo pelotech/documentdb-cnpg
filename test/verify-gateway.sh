@@ -10,7 +10,7 @@
 #      Debian-built binary loads on the MinimOS base.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-source versions.env
+source versions.env; source build/gateway/pins.env
 
 # Default the platform to the host arch (build-gateway.sh builds host-arch when TARGETARCH
 # is unset); defaulting to amd64 would ask for an amd64 variant of an arm64-only image on
@@ -20,8 +20,8 @@ case "$host_arch" in aarch64|arm64) host_arch=arm64 ;; x86_64|amd64) host_arch=a
 plat="linux/${TARGETARCH:-$host_arch}"
 
 echo "== building documentdb-gw =="
-./build/build-gateway.sh
-image="$(ARTIFACT=gateway REF="${REF:-local}" ./build/image-tag.sh)"
+./build/gateway/build-gateway.sh
+image="$(ARTIFACT=gateway REF="${REF:-local}" ./build/common/image-tag.sh)"
 echo "image: $image"
 
 pass_linkage=0
