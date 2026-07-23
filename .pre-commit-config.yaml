@@ -43,3 +43,12 @@ repos:
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
+
+  - repo: local
+    hooks:
+      - id: check-pins
+        name: pins.env consistency
+        entry: build/common/check-pins.sh
+        language: script
+        pass_filenames: false
+        files: '^build/(engine|imagevol|gateway)/pins\.env$'
