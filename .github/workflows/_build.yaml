@@ -33,7 +33,8 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64, amd64]
-        # KEEP this target set IN SYNC with versions.env (ENGINE_PG_MAJORS, IMAGEVOL_PG_MAJOR).
+        # KEEP this target set IN SYNC with the per-artifact build/<artifact>/pins.env
+        # (ENGINE_PG_MAJORS in engine, IMAGEVOL_PG_MAJOR in imagevol).
         target:
           - { artifact: engine, pg: "17" }
           - { artifact: engine, pg: "18" }
