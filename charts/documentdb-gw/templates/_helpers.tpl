@@ -37,9 +37,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- else -}}{{ printf "%s-pg" (include "documentdb-gw.fullname" .) -}}{{- end -}}
 {{- end -}}
 
-{{/* fail-fast validation: attach mode requires backend refs; certManager needs an issuerRef */}}
+{{/* fail-fast validation: create mode needs k8s >= 1.35 (ImageVolume); attach mode requires backend refs; certManager needs an issuerRef */}}
 {{- define "documentdb-gw.validate" -}}
-{{- if not .Values.cluster.create -}}
+{{- if .Values.cluster.create -}}
+{{- if not (semverCompare ">=1.35.0-0" .Capabilities.KubeVersion.Version) -}}{{ fail (printf "cluster.create=true needs Kubernetes >= 1.35 for the ImageVolume extension; cluster is %s. Set cluster.create=false to attach to an existing cluster on older Kubernetes." .Capabilities.KubeVersion.Version) }}{{- end -}}
+{{- else -}}
 {{- if not .Values.gateway.pg.existingSecret -}}{{ fail "cluster.create=false requires gateway.pg.existingSecret (the backend password secret)" }}{{- end -}}
 {{- if not .Values.gateway.pg.caSecret -}}{{ fail "cluster.create=false requires gateway.pg.caSecret (the backend CA secret)" }}{{- end -}}
 {{- if and (not .Values.gateway.pg.host) (eq .Values.cluster.name "ddb-pg") -}}{{ fail "cluster.create=false requires gateway.pg.host or cluster.name set to the existing cluster" }}{{- end -}}
