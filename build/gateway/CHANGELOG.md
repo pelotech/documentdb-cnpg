@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/pelotech/documentdb-cnpg/compare/gateway-v0.1.3...gateway-0.1.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* **gw:** self-heal reaped data pools in file-password mode ([#24](https://github.com/pelotech/documentdb-cnpg/issues/24)) ([f102ff6](https://github.com/pelotech/documentdb-cnpg/commit/f102ff6443e277755f783926c1259768466d98ef))
+
 ## [0.1.3](https://github.com/pelotech/documentdb-cnpg/compare/gateway-v0.1.2...gateway-v0.1.3) (2026-07-23)
 
 
