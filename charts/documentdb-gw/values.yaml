@@ -3,7 +3,8 @@ fullnameOverride: ""
 
 image:
   repository: ghcr.io/pelotech/documentdb-cnpg/documentdb-gw
-  tag: ""                 # empty -> .Chart.AppVersion
+  documentdbVersion: "0.114.0"  # documentdb segment of the tag; bump on a documentdb upgrade
+  tag: ""                       # empty -> "<image.documentdbVersion>-<.Chart.AppVersion>"
   pullPolicy: IfNotPresent
 
 gateway:

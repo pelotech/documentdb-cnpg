@@ -9,7 +9,7 @@
   "packages": {
     "build/engine":       { "release-type": "simple", "component": "engine" },
     "build/imagevol":     { "release-type": "simple", "component": "imagevol" },
-    "build/gateway":      { "release-type": "simple", "component": "gateway" },
+    "build/gateway":      { "release-type": "simple", "component": "gateway", "extra-files": ["charts/documentdb-gw/Chart.yaml"] },
     "charts/documentdb-gw": { "release-type": "helm", "component": "documentdb-gw-chart" }
   },
   "changelog-sections": [

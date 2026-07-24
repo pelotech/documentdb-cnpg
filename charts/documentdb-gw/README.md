@@ -145,7 +145,8 @@ self-signed listener cert (`listenerTLS.mode=generate`).
 | Key | Default | Description |
 | --- | --- | --- |
 | `image.repository` | `ghcr.io/pelotech/documentdb-cnpg/documentdb-gw` | Gateway image repository. |
-| `image.tag` | `""` | Gateway image tag; empty falls back to `.Chart.AppVersion` (`0.114.0-0.1.3`). |
+| `image.documentdbVersion` | `0.114.0` | documentdb segment of the gateway image tag. |
+| `image.tag` | `""` | Gateway image tag; empty composes `<image.documentdbVersion>-<.Chart.AppVersion>` (e.g. `0.114.0-0.1.3`). |
 | `image.pullPolicy` | `IfNotPresent` | Gateway image pull policy. |
 | `gateway.replicas` | `2` | Gateway Deployment replica count. |
 | `gateway.logLevel` | `info` | Gateway log level. |

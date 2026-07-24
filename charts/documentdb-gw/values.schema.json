@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "image": { "type": "object", "properties": {
-      "repository": {"type":"string"}, "tag": {"type":"string"}, "pullPolicy": {"type":"string"} } },
+      "repository": {"type":"string"}, "documentdbVersion": {"type":"string"}, "tag": {"type":"string"}, "pullPolicy": {"type":"string"} } },
     "gateway": { "type": "object", "properties": {
       "replicas": {"type":"integer","minimum":1},
       "pg": {"type":"object","properties":{
