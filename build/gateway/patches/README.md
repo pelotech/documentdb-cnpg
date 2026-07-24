@@ -17,6 +17,14 @@ existing connection pools.
   reuses the `openssl` 0.10 / `openssl-sys` 0.9 already in-tree, so no duplicate and no
   vendored OpenSSL, keeping the FIPS system-OpenSSL link.
 - `0002-feat-gw-TLS-password-file-auth-*` is the credential + TLS wiring.
+- `0003-fix-gw-recreate-reaped-data-pool-*` self-heals a pool-lifecycle defect: the
+  gateway reaps per-user data pools left unused for 2h (`POSTGRES_POOL_DISPOSE_INTERVAL_SEC`),
+  but an authenticated Mongo connection can stay open longer (idle timeout is larger), so a
+  client that goes quiet then resumes hits `get_data_pool` after its pool was disposed and
+  upstream returns "Connection pool missing for user." In file-password mode every user's
+  data pool authenticates as the one `postgres_data_user`, so `get_data_pool` falls back to
+  the lazily-(re)created shared service-account pool instead of erroring. Gated on file-password
+  mode, so upstream (per-user role) behaviour is unchanged.
 
 Both new inputs are file paths, read at startup:
 
@@ -33,11 +41,12 @@ Both new inputs are file paths, read at startup:
 
 ## Applying
 
-From the `pg_documentdb_gw` workspace root, `0001` before `0002`:
+From the `pg_documentdb_gw` workspace root, in order (`0001` → `0002` → `0003`):
 
 ```sh
 git apply /path/to/build/gateway/patches/0001-*.patch \
-          /path/to/build/gateway/patches/0002-*.patch
+          /path/to/build/gateway/patches/0002-*.patch \
+          /path/to/build/gateway/patches/0003-*.patch
 # or, to preserve authorship/history:
 git am /path/to/build/gateway/patches/*.patch
 ```

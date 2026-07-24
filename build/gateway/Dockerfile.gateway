@@ -22,7 +22,7 @@ COPY --from=gw-src . /build/pg_documentdb_gw
 COPY build/gateway/patches/*.patch /patches/
 WORKDIR /build/pg_documentdb_gw
 # git apply reads format-patch files directly; no git repo required.
-RUN git apply --verbose /patches/0001-*.patch /patches/0002-*.patch
+RUN git apply --verbose /patches/0001-*.patch /patches/0002-*.patch /patches/0003-*.patch
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     OPENSSL_NO_VENDOR=1 cargo build -p documentdb_gateway --profile release-with-symbols
 

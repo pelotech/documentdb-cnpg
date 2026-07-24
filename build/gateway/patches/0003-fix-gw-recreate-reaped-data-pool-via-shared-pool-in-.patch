@@ -1,0 +1,70 @@
+From 1db87b72d2761a411ce27e23472a86b6417bd725 Mon Sep 17 00:00:00 2001
+From: gen <gen@local>
+Date: Fri, 24 Jul 2026 05:51:44 +0000
+Subject: [PATCH] fix(gw): recreate reaped data pool via shared pool in
+ file-password mode
+
+---
+ .../src/postgres/conn_mgmt/pool_manager.rs    | 41 +++++++++++++++++--
+ 1 file changed, 38 insertions(+), 3 deletions(-)
+
+diff --git a/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs b/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs
+index 0715e98..bf22721 100644
+--- a/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs
++++ b/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs
+@@ -130,10 +130,23 @@ impl PoolManager {
+         let settings = PgPoolSettings::from_configuration(dynamic_configuration);
+ 
+         match self.user_data_pools.get(&(username.to_owned(), settings)) {
+-            None => Err(DocumentDBError::internal_error(
+-                "Connection pool missing for user.".to_owned(),
+-            )),
+             Some(pool_ref) => Ok(Arc::clone(pool_ref.value())),
++            None => {
++                // A long-lived idle authenticated connection can outlive its per-user
++                // pool: the reaper disposes pools unused for POSTGRES_POOL_DISPOSE_INTERVAL_SEC
++                // (2h) while the Mongo socket idle timeout is longer, so a client that goes
++                // quiet then resumes would hit a missing pool. In single-service-account
++                // (file-password) mode every user's data pool authenticates as the one
++                // postgres_data_user, so the lazily-(re)created shared pool is an equivalent
++                // connection. Use it instead of failing the request; upstream errors here.
++                if self.setup_configuration.postgres_data_user_password().is_some() {
++                    self.get_system_shared_pool(dynamic_configuration)
++                } else {
++                    Err(DocumentDBError::internal_error(
++                        "Connection pool missing for user.".to_owned(),
++                    ))
++                }
++            }
+         }
+     }
+ 
+@@ -646,6 +659,28 @@ mod tests {
+         assert_eq!(err.error_code(), ErrorCode::InternalError);
+     }
+ 
++    #[tokio::test]
++    async fn test_get_data_pool_missing_user_self_heals_in_file_password_mode() {
++        yield_now().await;
++
++        let dynamic_configuration = MaxConnectionConfig {
++            max_conn: 100.into(),
++        };
++        let mut setup = setup_configuration();
++        setup.postgres_data_user_password = Some("pw".to_owned());
++        let pool_manager = test_pool_manager_with_setup(&setup);
++
++        // No per-user pool allocated. Upstream errors here; file-password mode falls
++        // back to the lazily-created shared service-account pool.
++        let pool = pool_manager
++            .get_data_pool("missing-user", &dynamic_configuration)
++            .expect("file-password mode should self-heal to the shared pool");
++        let shared = pool_manager
++            .get_system_shared_pool(&dynamic_configuration)
++            .unwrap();
++        assert!(Arc::ptr_eq(&pool, &shared));
++    }
++
+     #[tokio::test]
+     async fn test_get_data_pool_with_allocated_pool_returns_expected_size() {
+         // We still need an async context to create the connection pool (see ConnectionPool::new_with_user),
