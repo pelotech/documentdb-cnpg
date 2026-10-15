@@ -39,8 +39,8 @@ cluster:
   name: ddb-pg
   instances: 1
   # KEEP imageName in sync with HARDENED_BASE_18 in build/imagevol/pins.env when adopting a new base.
-  imageName: reg.mini.dev/cloudnative-pg-postgresql-fips:18.4@sha256:9bbeaf6f3dc096cea12a5ff5112ffa81e76c9c4c86b49d765579ed71ea55db31
-  extensionImage: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu77-0.1.3
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:c7747d8d1049fff9cf30d9cd83d14d609c957afb5ffbcd114145f393ea1850e1
+  extensionImage: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu76-0.2.0
   extensionPullPolicy: IfNotPresent
   storage: 1Gi
   enableSuperuserAccess: false
