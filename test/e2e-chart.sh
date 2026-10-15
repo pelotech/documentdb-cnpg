@@ -9,7 +9,7 @@ fail(){ echo "[e2e-chart] FAIL: $*" >&2; exit 1; }
 KC=documentdb-chart-e2e; NS=documentdb-chart-e2e; REL=ddbgw; CLUSTER=ddb-pg
 EXT_IMAGE="${EXT_IMAGE:?set EXT_IMAGE (local extension image)}"
 GW_IMAGE="${GW_IMAGE:?set GW_IMAGE (local gateway image)}"
-BASE_IMAGE="${BASE_IMAGE:?set BASE_IMAGE (hardened base)}"
+BASE_IMAGE="${BASE_IMAGE:?set BASE_IMAGE (CNPG base)}"
 CNPG_MANIFEST="${CNPG_MANIFEST:-https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.27/releases/cnpg-1.27.1.yaml}"
 KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.35.0}"
 created=0

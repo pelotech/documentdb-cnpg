@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the documentdb-gw image: compile the patched upstream documentdb_gateway in the
-# pinned Debian rust builder, then bake the single binary onto the hardened fips base.
+# pinned Debian rust builder, then bake the single binary onto the pinned CNPG base.
 # Mirrors build-engine.sh. PG- and ICU-agnostic (the gateway links neither).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -29,7 +29,7 @@ plat="linux/${TARGETARCH:-$host_arch}"
 
 docker build --platform "$plat" -f build/gateway/Dockerfile.gateway \
   --build-arg RUST_BUILDER="$RUST_BUILDER" \
-  --build-arg FIPS_BASE="$HARDENED_BASE_18" \
+  --build-arg BASE="$HARDENED_BASE_18" \
   --build-context gw-src=.work/src/pg_documentdb_gw \
   "${labels[@]}" \
   -t "$image" .

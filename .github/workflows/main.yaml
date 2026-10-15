@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 jobs:
-  # Early warning that the vendor moved a fips:NN tag off the digest we pinned.
+  # Early warning that upstream moved a <ver>-standard-trixie tag off the digest we pinned.
   # Fails the run so a re-pin is visible; does not gate the build (we intentionally
   # keep building the pinned digest until re-pinned).
   base-drift:

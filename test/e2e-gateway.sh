@@ -3,7 +3,7 @@
 # gateway as a standalone Deployment, then drives a MongoDB insert+find round-trip through
 # the gateway over TLS + SCRAM (mongosh -> gateway -> TLS/SCRAM -> Postgres -> documentdb).
 # Exercises what unit tests and the build-time linkage check cannot: the image runs on the
-# hardened base, backend TLS+SCRAM auth works over the network, and data round-trips.
+# CNPG base, backend TLS+SCRAM auth works over the network, and data round-trips.
 #
 # Usage:  [KIND_KEEP=1] ./test/e2e-gateway.sh
 # Inputs (env, all have defaults):
@@ -17,7 +17,7 @@ fail(){ echo "[e2e-gateway] FAIL: $*" >&2; exit 1; }
 KC=documentdb-gw-e2e
 NS=documentdb-gw-e2e
 CLUSTER=ddb-engine
-ENGINE_IMAGE="${ENGINE_IMAGE:-ghcr.io/pelotech/documentdb-cnpg-extension:18.4-documentdb0.114-0-icu77}"
+ENGINE_IMAGE="${ENGINE_IMAGE:-ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.6-0.114.0-icu76-local}"
 GW_IMAGE="${GW_IMAGE:-ghcr.io/pelotech/documentdb-cnpg/documentdb-gw:0.114.0-local}"
 CNPG_MANIFEST="${CNPG_MANIFEST:-https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.27/releases/cnpg-1.27.1.yaml}"
 KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.35.0}"
@@ -82,8 +82,7 @@ kubectl wait --for=condition=Ready "cluster/$CLUSTER" -n "$NS" --timeout=360s \
 # Backend password (SCRAM to -rw) as a mounted secret; cluster CA for verify-full.
 kubectl create secret generic gw-pg-secret -n "$NS" --from-literal=password="$GW_PASS" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-# Self-signed listener cert. LISTENER_TLS=auto can't work on the hardened base (its cert
-# generator needs an openssl CLI the base lacks), so deploy in pem mode with a mounted cert.
+# Self-signed listener cert, deployed in pem mode with a mounted cert (the shipped mode).
 workdir="$(mktemp -d)"
 openssl req -x509 -newkey rsa:2048 -nodes -days 3 -subj "/CN=documentdb-gw" \
   -keyout "$workdir/tls.key" -out "$workdir/tls.crt" >/dev/null 2>&1 \

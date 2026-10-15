@@ -1,21 +1,26 @@
 # documentdb-cnpg
 
 Builds the [DocumentDB](https://github.com/documentdb/documentdb) Postgres
-extension linked against ICU 77, for use with [CloudNativePG](https://cloudnative-pg.io/)
-on the hardened Minimus `cloudnative-pg-postgresql-fips` base images.
+extension for use with [CloudNativePG](https://cloudnative-pg.io/) on the
+upstream CloudNativePG `ghcr.io/cloudnative-pg/postgresql:<ver>-standard-trixie`
+base images (Debian trixie, PGDG Postgres, ICU 76).
 
-DocumentDB resolves versioned ICU collation symbols (e.g. `ucol_getSortKey_77`)
+DocumentDB resolves versioned ICU collation symbols (e.g. `ucol_getSortKey_76`)
 from the host Postgres process rather than bundling its own ICU, so the
-extension's build-time ICU major has to match the base image's ICU major.
-Upstream only ships deb/rhel builds against ICU 60-76; none of those match the
-Minimus base, which is on ICU 77, so this repo builds its own.
+extension's build-time ICU major has to match the base image's ICU major. The
+build uses upstream's own trixie deb builder, which links the same distro ICU
+as the base, and guards that the majors agree.
+
+Releases up to engine/imagevol 0.1.3 were built on a vendor FIPS base with
+ICU 77; see [Migrating an existing deployment](#migrating-an-existing-deployment)
+before moving a cluster from those images onto these.
 
 Two artifacts come out of that build:
 
 - **Engine images**, for PG17 and PG18: documentdb baked directly into the
-  Minimus `fips` base, consumed as a cluster's `imageName`.
+  CNPG `standard-trixie` base, consumed as a cluster's `imageName`.
 - **ImageVolume extension**, PG18 only: documentdb packaged as a CNPG
-  `ImageVolume` image and mounted into a stock `fips:18` cluster. This needs
+  `ImageVolume` image and mounted into a stock `18.x-standard-trixie` cluster. This needs
   the `extension_control_path` GUC, which only exists in Postgres 18, so it
   can't target PG17.
 
@@ -38,18 +43,18 @@ PG_MAJOR=18 ./build/imagevol/build.sh
 EXT_IMAGE=<printed tag> KIND_EPHEMERAL=1 ./test/verify.sh
 ```
 
-Two images: `<IMAGE_REPO>/postgresql-fips` (the hardened engine images, one tag
-per Postgres major) and `<IMAGE_REPO>/extension` (the ImageVolume). The build
-scripts print the full reference. The `-fips` suffix leaves room for an
-unhardened engine variant later.
+Two images: `<IMAGE_REPO>/postgresql-fips` (the engine images, one tag per
+Postgres major) and `<IMAGE_REPO>/extension` (the ImageVolume). The build
+scripts print the full reference. The `-fips` name is historical: the engine is
+no longer built on a FIPS base.
 
 Engine tags lead with the base's full Postgres version, because CNPG parses the
 engine `imageName` tag to detect major-version upgrades; the baked-in documentdb
 version follows as the second segment, the ICU major as the third, then the build
-ref: `postgresql-fips:17.10-0.114.0-icu77-<ref>` and
-`postgresql-fips:18.4-0.114.0-icu77-<ref>` (a local build is
-`postgresql-fips:17.10-0.114.0-icu77-local`). The extension tag carries the major
-as `extension:pg18-0.114.0-icu77-<ref>`. Leading with the pgver is required:
+ref: `postgresql-fips:17.11-0.114.0-icu76-<ref>` and
+`postgresql-fips:18.6-0.114.0-icu76-<ref>` (a local build is
+`postgresql-fips:17.11-0.114.0-icu76-local`). The extension tag carries the major
+as `extension:pg18-0.114.0-icu76-<ref>`. Leading with the pgver is required:
 CNPG's `version.FromTag` reads only the leading `^(\d\.?)+`, so everything from
 the first `-` on (documentdb version, ICU, ref) is ignored by its major-version
 detection.
@@ -68,7 +73,8 @@ Two supported delivery paths, matching the two artifacts. Both are what CI
 stands up and asserts green on both arches; the only differences here are that
 CI `kind load`s locally-built images (so it sets `pullPolicy: Never`) whereas
 these pull the published tags from GHCR, and CI uses a throwaway 1Gi single
-instance. Replace `0.1.2` with the release you want.
+instance. Replace `<release>` with the release you want (the first release
+built on the upstream CNPG base, not 0.1.3 or earlier).
 
 Two settings are load-bearing on every cluster and are easy to miss:
 
@@ -81,7 +87,7 @@ Two settings are load-bearing on every cluster and are easy to miss:
 
 ### Path A — engine image (documentdb baked in)
 
-The image is a hardened `fips` Postgres with documentdb already inside, so you
+The image is the upstream CNPG Postgres with documentdb already inside, so you
 only set `imageName`. Works on PG17 and PG18, needs nothing beyond CNPG.
 
 ```yaml
@@ -91,9 +97,9 @@ metadata:
   name: documentdb
 spec:
   instances: 1
-  # documentdb + ICU 77 baked into the hardened Minimus fips base.
-  # PG17: postgresql-fips:17.10-0.114.0-icu77-0.1.2   PG18: postgresql-fips:18.4-0.114.0-icu77-0.1.2
-  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.4-0.114.0-icu77-0.1.2
+  # documentdb baked into the upstream CNPG standard-trixie base (ICU 76).
+  # PG17: postgresql-fips:17.11-0.114.0-icu76-<release>   PG18: postgresql-fips:18.6-0.114.0-icu76-<release>
+  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.6-0.114.0-icu76-<release>
   enableSuperuserAccess: true          # lets you psql -U postgres for the smoke test
   storage:
     size: 10Gi
@@ -115,7 +121,7 @@ spec:
 
 ### Path B — ImageVolume extension (stock base + mounted extension), PG18 only
 
-The cluster runs a **stock** hardened `fips:18` base and CNPG mounts documentdb
+The cluster runs a **stock** upstream CNPG `18.x-standard-trixie` base and CNPG mounts documentdb
 as a declarative extension via an ImageVolume. PG18-only, because it needs the
 `extension_control_path` GUC. **Requires Kubernetes >= 1.35 with the
 `ImageVolume` feature gate enabled, and CNPG >= 1.27.**
@@ -127,10 +133,10 @@ metadata:
   name: documentdb
 spec:
   instances: 1
-  # Stock hardened Minimus fips:18 base — documentdb is NOT in this image; it is
-  # mounted from the extension ImageVolume below. The base MUST be ICU 77 (this
-  # pinned digest is), because documentdb links versioned ucol_*_77 symbols.
-  imageName: reg.mini.dev/cloudnative-pg-postgresql-fips:18.4@sha256:9bbeaf6f3dc096cea12a5ff5112ffa81e76c9c4c86b49d765579ed71ea55db31
+  # Stock upstream CNPG base — documentdb is NOT in this image; it is mounted
+  # from the extension ImageVolume below. The base MUST be ICU 76 (trixie; this
+  # pinned digest is), because documentdb links versioned ucol_*_76 symbols.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:c7747d8d1049fff9cf30d9cd83d14d609c957afb5ffbcd114145f393ea1850e1
   enableSuperuserAccess: true
   storage:
     size: 10Gi
@@ -146,7 +152,7 @@ spec:
     extensions:
       - name: documentdb
         image:
-          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu77-0.1.2
+          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu76-<release>
         extension_control_path: [share]
         dynamic_library_path: [lib]
         ld_library_path: [lib, system]
@@ -183,17 +189,19 @@ kubectl exec "$primary" -c postgres -- psql -U postgres -d postgres -tAqc \
 
 Both artifacts share a common Stage A (`build/common/stage-a.sh`, `build/common/Dockerfile.deb`):
 it takes the pinned upstream `documentdb/documentdb` source, builds it with
-upstream's own `packaging/deb/Dockerfile-deb`, links it against an
-ICU-77-from-source install, and emits a `.deb`. A build-time `objdump` check
-confirms the result links `ucol_*_77` symbols and nothing from ICU 76.
+upstream's own `packaging/deb/Dockerfile-deb` on `debian:trixie` (the same
+distro as the base, so it links the base's ICU), and emits a `.deb`. A
+build-time `objdump` check confirms the result links `ucol_*_<ICU_MAJOR>`
+symbols and no other ICU major.
 
 From there the two artifacts diverge:
 
-- **Engine** (`build/engine/build-engine.sh`, `build/engine/Dockerfile.engine`): installs the
-  `.deb` straight into `FROM fips:${PG_MAJOR}`, patches module RPATHs with
-  `patchelf` so dependencies resolve without `ldconfig`, and bundles the
-  extension's non-core shared library dependencies alongside the base's own
-  `/system` libraries without shadowing its FIPS-certified crypto.
+- **Engine** (`build/engine/build-engine.sh`, `build/engine/Dockerfile.engine`): copies the
+  documentdb and dependency modules from the installed `.deb` into the pinned
+  base's `pkglibdir`/`sharedir`, bundles their non-core shared library
+  dependencies (postgis' GEOS/PROJ/GDAL tree and so on) into
+  `/usr/lib/documentdb-system`, and points the modules' RPATH there with
+  `patchelf` so nothing touches the system `ldconfig` cache.
 - **ImageVolume** (`build/imagevol/build.sh`, `build/imagevol/Dockerfile.imagevol`): lays the same
   `.deb` out as a standalone `/lib` + `/share` + `/system` tree in the shape
   CNPG expects for an `ImageVolume` mount, with no base image involved.
@@ -270,7 +278,7 @@ install modes, the values reference, listener-TLS options, and the attach-mode
 ## Migrating an existing deployment
 
 Moving an existing CNPG cluster off a FerretDB documentdb operand onto this
-stack — including the uid 999 -> 26 and ICU -> 77 boundary — is written up
+stack — including the uid 999 -> 26 boundary — is written up
 separately in [docs/migrating-from-ferretdb.md](docs/migrating-from-ferretdb.md).
 
 ## CI and publishing
@@ -279,20 +287,20 @@ separately in [docs/migrating-from-ferretdb.md](docs/migrating-from-ferretdb.md)
 `main.yaml` does the same on push to `main` and then publishes multi-arch images:
 a `git-<short_sha>` tag for each commit, and a release version when release-please
 cuts a release. Both call the reusable `_build.yaml`. Published tags follow the
-scheme above, e.g. `postgresql-fips:17.10-0.114.0-icu77-git-1a2b3c4` or `extension:pg18-0.114.0-icu77-1.2.0`.
+scheme above, e.g. `postgresql-fips:17.11-0.114.0-icu76-git-1a2b3c4` or `extension:pg18-0.114.0-icu76-1.2.0`.
 Releases are driven by release-please from conventional commit messages, and a
 `lint-title` workflow enforces a conventional pull-request title (squash merges use
 it as the commit message release-please reads).
 
 A weekly scheduled run builds and verifies without publishing, and a `base-drift`
-job compares the pinned base digests against the live `fips:NN` tags and fails the
+job compares the pinned base digests against the live `<ver>-standard-trixie` tags and fails the
 run if a tag has moved, as a prompt to re-pin.
 
 ## Pins
 
 Genuinely shared values — `IMAGE_REPO` and `DEFAULT_PG_MAJOR` — live in
 `versions.env`. The per-artifact reproducibility inputs — the documentdb source
-tag, ICU version, hardened base digests, rust builder, and which Postgres majors
+tag, ICU major, base image digests, rust builder, and which Postgres majors
 get engine vs. ImageVolume builds — live in each artifact's
 `build/<artifact>/pins.env`. The values that must agree across artifacts
 (documentdb tag, ICU, the shared base-18 digest) are kept in lockstep by
