@@ -8,7 +8,7 @@ source versions.env
 source "build/${ARTIFACT:-engine}/pins.env"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 ARTIFACT="${ARTIFACT:-engine}"
-base_var="HARDENED_BASE_${PG_MAJOR}"; base="${!base_var:?no hardened base pinned for PG ${PG_MAJOR}}"
+base_var="HARDENED_BASE_${PG_MAJOR}"; base="${!base_var:?no base pinned for PG ${PG_MAJOR}}"
 
 case "$ARTIFACT" in
   engine)   desc="DocumentDB-embedded PostgreSQL ${PG_MAJOR}, ICU ${ICU_MAJOR}" ;;

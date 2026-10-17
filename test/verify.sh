@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Brings up a CNPG cluster on the hardened base with the built extension image
+# Brings up a CNPG cluster on the pinned base with the built extension image
 # and verifies it loads: CREATE EXTENSION documentdb CASCADE succeeds (pulling
 # in postgis + pg_cron + vector) and a smoke document round-trips. Exit status
 # gates the publish step.
@@ -21,7 +21,7 @@ source versions.env; source build/imagevol/pins.env
 : "${EXT_IMAGE:?pass the built image ref, e.g. EXT_IMAGE=<repo>:<tag>}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 base_var="HARDENED_BASE_${PG_MAJOR}"
-HARDENED_BASE="${!base_var:?no hardened base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in build/imagevol/pins.env)}"
+HARDENED_BASE="${!base_var:?no base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in build/imagevol/pins.env)}"
 
 NS=documentdb-ext-verify
 CLUSTER=ddb-pg
@@ -80,7 +80,7 @@ kubectl wait --for=condition=Available deploy/cnpg-controller-manager -n cnpg-sy
 log "loading $EXT_IMAGE into kind cluster $KIND_CLUSTER"
 kind load docker-image "$EXT_IMAGE" --name "$KIND_CLUSTER"
 
-# 3. render and apply the cluster on the hardened base with the built image
+# 3. render and apply the cluster on the pinned base with the built image
 log "applying CNPG cluster $CLUSTER in ns $NS"
 # ensure a clean namespace: wait out any prior terminating one to avoid a create/delete race
 kubectl delete ns "$NS" --ignore-not-found --wait=true --timeout=120s

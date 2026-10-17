@@ -2,7 +2,7 @@
 
 Carried patches to the upstream `documentdb_gateway` Rust workspace
 (`documentdb/documentdb`, the `pg_documentdb_gw` sub-tree). The gateway is compiled
-from source for the FIPS image, so these apply in the builder stage before `cargo build`.
+from source for the gateway image, so these apply in the builder stage before `cargo build`.
 
 - Authored against `DOCUMENTDB_TAG=v0.114-0`.
 - Apply from the `pg_documentdb_gw` workspace root (the directory holding `Cargo.toml`,
@@ -15,7 +15,7 @@ existing connection pools.
 
 - `0001-build-gw-add-postgres-openssl-*` adds the `postgres-openssl` 0.5 dependency. It
   reuses the `openssl` 0.10 / `openssl-sys` 0.9 already in-tree, so no duplicate and no
-  vendored OpenSSL, keeping the FIPS system-OpenSSL link.
+  vendored OpenSSL, keeping the dynamic link to the base's system OpenSSL.
 - `0002-feat-gw-TLS-password-file-auth-*` is the credential + TLS wiring.
 - `0003-fix-gw-recreate-reaped-data-pool-*` self-heals a pool-lifecycle defect: the
   gateway reaps per-user data pools left unused for 2h (`POSTGRES_POOL_DISPOSE_INTERVAL_SEC`),

@@ -1,34 +1,25 @@
-# Stage A: build the DocumentDB pg extension .deb linked against ICU 77.
+# Stage A: build the DocumentDB pg extension .deb for the upstream CNPG base.
 #
-# The builder (DDB_BUILDER) is upstream's packaging/deb/Dockerfile-deb image: it
-# carries the full dependency tree and its own Postgres links ICU 76. We install
-# ICU 77 from source over it so the *dev* symlink (libicui18n.so) flips to 77 and
-# the extension compiles/links ICU 77, while the builder's Postgres keeps .so.76.
-# Then we neutralize upstream's override_dh_auto_test (it runs `make check`, which
-# spins up the builder's ICU-76 Postgres and cannot load a 77 extension) so
-# `debuild` completes and emits a clean .deb. A build-time objdump guard asserts
-# the extension links ucol_*_77 and no ucol_*_76.
+# The builder (DDB_BUILDER) is upstream's packaging/deb/Dockerfile-deb image on
+# debian:trixie, the same distro and PGDG packages as the ghcr.io/cloudnative-pg
+# *-standard-trixie bases, so the extension links the distro ICU (ICU_MAJOR) that
+# the base's Postgres also links. We neutralize upstream's override_dh_auto_test
+# (it runs the full `make check` regression suite) so `debuild` stays fast; the
+# acceptance gate is test/verify*.sh. A build-time objdump guard asserts the
+# extension links ucol_*_${ICU_MAJOR} and no other ICU major.
 ARG DDB_BUILDER
 FROM ${DDB_BUILDER} AS builder
 SHELL ["/bin/bash", "-c"]
-ARG ICU_VERSION
+ARG ICU_MAJOR
 ARG DOCUMENTDB_TAG
 ARG PG_MAJOR=18
 
-# 1. Install ICU 77 from unicode-org source into the multiarch libdir; flip the dev symlink.
+# 1. Assert the builder's ICU is the pinned major; fail loudly if the distro moved.
 RUN set -euo pipefail; \
+    apt-get update && apt-get install -y --no-install-recommends binutils; \
     triplet="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"; \
-    apt-get update && apt-get install -y --no-install-recommends wget ca-certificates binutils; \
-    cd /tmp; \
-    wget -qL "https://github.com/unicode-org/icu/releases/download/release-${ICU_VERSION}/icu4c-${ICU_VERSION/-/_}-src.tgz" -O icu.tgz; \
-    tar xf icu.tgz && cd icu/source; \
-    ./configure --prefix=/usr --libdir="/usr/lib/${triplet}" >/tmp/icu_conf.log 2>&1; \
-    make -j"$(nproc)" >/tmp/icu_make.log 2>&1; \
-    make install >/tmp/icu_install.log 2>&1; \
-    ldconfig; \
-    test -L "/usr/lib/${triplet}/libicui18n.so"; \
-    readlink -f "/usr/lib/${triplet}/libicui18n.so" | grep -q "\.so\.${ICU_VERSION%%-*}" \
-      || { echo "ICU dev symlink did not flip to ${ICU_VERSION%%-*}"; ls -l "/usr/lib/${triplet}/libicui18n.so"; exit 1; }
+    readlink -f "/usr/lib/${triplet}/libicui18n.so" | grep -q "\.so\.${ICU_MAJOR}\." \
+      || { echo "builder ICU is not ${ICU_MAJOR}"; ls -l "/usr/lib/${triplet}"/libicui18n.so*; exit 1; }
 
 WORKDIR /build
 
@@ -47,8 +38,9 @@ RUN set -euo pipefail; \
       /usr/local/bin/packaging-entrypoint.sh
 
 # 4. Build-time correctness guard: read the core .so out of the produced .deb and assert
-#    it links ICU 77 (ucol_getSortKey_77 present) and carries no ICU-76 collation symbol.
-#    (`ucol_*_76` only; a static Intel decimal-math __bid_round256_58_76 is not ICU.)
+#    it links ICU ${ICU_MAJOR} (ucol_getSortKey_${ICU_MAJOR} present) and carries no other
+#    ICU major's collation symbol. (`ucol_*_NN` only; a static Intel decimal-math
+#    __bid_round256_58_76 is not ICU.)
 RUN set -euo pipefail; \
     pkglib="/usr/lib/postgresql/${PG_MAJOR}/lib"; \
     core_so=""; \
@@ -58,11 +50,10 @@ RUN set -euo pipefail; \
     done; \
     test -n "$core_so" || { echo "pg_documentdb_core.so not found in any /output/*.deb"; ls -la /output; exit 1; }; \
     syms="$(objdump -T "$core_so")"; \
-    grep -q 'ucol_getSortKey_77' <<<"$syms" || { echo "missing ucol_getSortKey_77 (not linked against ICU 77)"; exit 1; }; \
-    if grep -qE 'ucol_[a-z]+_76' <<<"$syms"; then \
-      echo "found ICU-76 collation symbols in $core_so:"; grep -oE 'ucol_[a-z]+_76' <<<"$syms" | sort -u; exit 1; \
-    fi; \
-    echo "ICU-77 link verified on $(basename "$core_so")"
+    grep -q "ucol_getSortKey_${ICU_MAJOR}" <<<"$syms" || { echo "missing ucol_getSortKey_${ICU_MAJOR} (not linked against ICU ${ICU_MAJOR})"; exit 1; }; \
+    other="$(grep -oE 'ucol_[a-zA-Z]+_[0-9]+' <<<"$syms" | grep -vE "_${ICU_MAJOR}\$" | sort -u || true)"; \
+    if [ -n "$other" ]; then echo "found non-ICU-${ICU_MAJOR} collation symbols in $core_so:"; echo "$other"; exit 1; fi; \
+    echo "ICU-${ICU_MAJOR} link verified on $(basename "$core_so")"
 
 # Export just the .deb(s).
 FROM scratch

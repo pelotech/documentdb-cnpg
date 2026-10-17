@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a documentdb-embedded engine image for one Postgres major:
-# Stage A (.deb via stage-a.sh) -> bake (Dockerfile.engine) into fips:${PG_MAJOR}.
+# Stage A (.deb via stage-a.sh) -> bake (Dockerfile.engine) into the pinned CNPG base.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 set -a
@@ -11,7 +11,7 @@ set +a
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 
 base_var="HARDENED_BASE_${PG_MAJOR}"
-FIPS_BASE="${!base_var:?no hardened base pinned for PG ${PG_MAJOR}}"
+BASE="${!base_var:?no base pinned for PG ${PG_MAJOR}}"
 
 host_arch="$(uname -m)"
 case "$host_arch" in aarch64|arm64) host_arch=arm64 ;; x86_64|amd64) host_arch=amd64 ;; esac
@@ -26,7 +26,7 @@ mapfile -t labels < <(ARTIFACT=engine PG_MAJOR="$PG_MAJOR" ./build/common/labels
 
 docker build --platform "$plat" -f build/engine/Dockerfile.engine \
   --build-arg DDB_BUILDER="$builder" \
-  --build-arg FIPS_BASE="$FIPS_BASE" \
+  --build-arg BASE="$BASE" \
   --build-arg PG_MAJOR="$PG_MAJOR" \
   --build-context deb-stage="$debdir" \
   "${labels[@]}" \

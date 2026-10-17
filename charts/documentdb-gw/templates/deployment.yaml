@@ -42,9 +42,8 @@ spec:
             - name: LISTEN_ADDR
               value: ":10260"
             # Mongo-facing listener TLS. Use 'pem' with a mounted cert: 'auto' self-signs
-            # at startup but needs an `openssl` CLI the hardened base omits, so the
-            # entrypoint rejects it. Mount the cert from a Secret (e.g. a cert-manager
-            # Certificate) at /etc/documentdb/tls.
+            # a throwaway cert at startup (dev/testing only). Mount the cert from a Secret
+            # (e.g. a cert-manager Certificate) at /etc/documentdb/tls.
             - name: LISTENER_TLS
               value: pem
             - name: TLS_CERT_FILE

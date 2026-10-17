@@ -1,4 +1,4 @@
-# Stage B: package the ICU-77 extension .deb as a CNPG ImageVolume image.
+# Stage B: package the extension .deb as a CNPG ImageVolume image.
 #
 # Install the Stage A .deb into a builder that has pg_config, lay out the tree
 # CNPG mounts, and bundle the runtime dependency closure in /system.
