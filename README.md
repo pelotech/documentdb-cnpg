@@ -51,10 +51,10 @@ no longer built on a FIPS base.
 Engine tags lead with the base's full Postgres version, because CNPG parses the
 engine `imageName` tag to detect major-version upgrades; the baked-in documentdb
 version follows as the second segment, the ICU major as the third, then the build
-ref: `postgresql-fips:17.11-0.114.0-icu76-<ref>` and
-`postgresql-fips:18.6-0.114.0-icu76-<ref>` (a local build is
-`postgresql-fips:17.11-0.114.0-icu76-local`). The extension tag carries the major
-as `extension:pg18-0.114.0-icu76-<ref>`. Leading with the pgver is required:
+ref: `postgresql-fips:17.11-1.0.0-icu76-<ref>` and
+`postgresql-fips:18.6-1.0.0-icu76-<ref>` (a local build is
+`postgresql-fips:17.11-1.0.0-icu76-local`). The extension tag carries the major
+as `extension:pg18-1.0.0-icu76-<ref>`. Leading with the pgver is required:
 CNPG's `version.FromTag` reads only the leading `^(\d\.?)+`, so everything from
 the first `-` on (documentdb version, ICU, ref) is ignored by its major-version
 detection.
@@ -98,8 +98,8 @@ metadata:
 spec:
   instances: 1
   # documentdb baked into the upstream CNPG standard-trixie base (ICU 76).
-  # PG17: postgresql-fips:17.11-0.114.0-icu76-<release>   PG18: postgresql-fips:18.6-0.114.0-icu76-<release>
-  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.6-0.114.0-icu76-<release>
+  # PG17: postgresql-fips:17.11-1.0.0-icu76-<release>   PG18: postgresql-fips:18.6-1.0.0-icu76-<release>
+  imageName: ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.6-1.0.0-icu76-<release>
   enableSuperuserAccess: true          # lets you psql -U postgres for the smoke test
   storage:
     size: 10Gi
@@ -152,7 +152,7 @@ spec:
     extensions:
       - name: documentdb
         image:
-          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu76-<release>
+          reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-1.0.0-icu76-<release>
         extension_control_path: [share]
         dynamic_library_path: [lib]
         ld_library_path: [lib, system]
@@ -221,7 +221,7 @@ come from a URL file, the SCRAM password from a mounted secret file, and the ser
 another. No credential is ever placed in the URL or in `PGPASSWORD`.
 
 **Image.** `documentdb-gw:<ddb>-<ref>`, where `<ddb>` is the baked-in documentdb version
-(e.g. `0.114.0`) and `<ref>` is `git-<sha>` / a release / `local`. The image links neither
+(e.g. `1.0.0`) and `<ref>` is `git-<sha>` / a release / `local`. The image links neither
 PG nor ICU, so its tag carries no `pgver` or `icu` segment; it tracks the documentdb
 version only. The TLS + password-file patch is a thin overlay on upstream, to be dropped
 once upstream ships the same capability.
@@ -287,7 +287,7 @@ separately in [docs/migrating-from-ferretdb.md](docs/migrating-from-ferretdb.md)
 `main.yaml` does the same on push to `main` and then publishes multi-arch images:
 a `git-<short_sha>` tag for each commit, and a release version when release-please
 cuts a release. Both call the reusable `_build.yaml`. Published tags follow the
-scheme above, e.g. `postgresql-fips:17.11-0.114.0-icu76-git-1a2b3c4` or `extension:pg18-0.114.0-icu76-1.2.0`.
+scheme above, e.g. `postgresql-fips:17.11-1.0.0-icu76-git-1a2b3c4` or `extension:pg18-1.0.0-icu76-1.2.0`.
 Releases are driven by release-please from conventional commit messages, and a
 `lint-title` workflow enforces a conventional pull-request title (squash merges use
 it as the commit message release-please reads).

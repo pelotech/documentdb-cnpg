@@ -4,7 +4,9 @@ Carried patches to the upstream `documentdb_gateway` Rust workspace
 (`documentdb/documentdb`, the `pg_documentdb_gw` sub-tree). The gateway is compiled
 from source for the gateway image, so these apply in the builder stage before `cargo build`.
 
-- Authored against `DOCUMENTDB_TAG=v0.114-0`.
+- Refreshed against `DOCUMENTDB_TAG=v1.0-0` (originally authored against v0.114-0). v1.0 still
+  has no backend TLS or password input (`NoTls`, `PGPASSWORD` rejected), and still reaps idle
+  data pools after 2h while sockets idle for 5h, so all three are still needed.
 - Apply from the `pg_documentdb_gw` workspace root (the directory holding `Cargo.toml`,
   `documentdb_gateway_core/`, `documentdb_macros/`, ...).
 

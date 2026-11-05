@@ -42,7 +42,7 @@ spec:
         - name: documentdb-gw
           # documentdb-gw:<ddb>-<ref>: <ddb> is the baked-in documentdb version, <ref> is
           # git-<sha> / release / local. Pin by digest in production.
-          image: ghcr.io/pelotech/documentdb-cnpg/documentdb-gw:0.114.0-<ref>
+          image: ghcr.io/pelotech/documentdb-cnpg/documentdb-gw:1.0.0-<ref>
           imagePullPolicy: IfNotPresent
           ports:
             - name: mongo

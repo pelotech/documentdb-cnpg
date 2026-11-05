@@ -17,8 +17,8 @@ fail(){ echo "[e2e-gateway] FAIL: $*" >&2; exit 1; }
 KC=documentdb-gw-e2e
 NS=documentdb-gw-e2e
 CLUSTER=ddb-engine
-ENGINE_IMAGE="${ENGINE_IMAGE:-ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.6-0.114.0-icu76-local}"
-GW_IMAGE="${GW_IMAGE:-ghcr.io/pelotech/documentdb-cnpg/documentdb-gw:0.114.0-local}"
+ENGINE_IMAGE="${ENGINE_IMAGE:-ghcr.io/pelotech/documentdb-cnpg/postgresql-fips:18.6-1.0.0-icu76-local}"
+GW_IMAGE="${GW_IMAGE:-ghcr.io/pelotech/documentdb-cnpg/documentdb-gw:1.0.0-local}"
 CNPG_MANIFEST="${CNPG_MANIFEST:-https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.27/releases/cnpg-1.27.1.yaml}"
 KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.35.0}"
 GW_PASS="${GW_PASS:-gwpass123}"
