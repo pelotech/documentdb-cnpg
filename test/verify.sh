@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Brings up a CNPG cluster on the hardened base with the built extension image
+# Brings up a CNPG cluster on the pinned base with the built extension image
 # and verifies it loads: CREATE EXTENSION documentdb CASCADE succeeds (pulling
 # in postgis + pg_cron + vector) and a smoke document round-trips. Exit status
 # gates the publish step.
@@ -21,7 +21,7 @@ source versions.env; source build/imagevol/pins.env
 : "${EXT_IMAGE:?pass the built image ref, e.g. EXT_IMAGE=<repo>:<tag>}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 base_var="HARDENED_BASE_${PG_MAJOR}"
-HARDENED_BASE="${!base_var:?no hardened base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in build/imagevol/pins.env)}"
+HARDENED_BASE="${!base_var:?no base pinned for PG ${PG_MAJOR} (set HARDENED_BASE_${PG_MAJOR} in build/imagevol/pins.env)}"
 
 NS=documentdb-ext-verify
 CLUSTER=ddb-pg
@@ -80,7 +80,7 @@ kubectl wait --for=condition=Available deploy/cnpg-controller-manager -n cnpg-sy
 log "loading $EXT_IMAGE into kind cluster $KIND_CLUSTER"
 kind load docker-image "$EXT_IMAGE" --name "$KIND_CLUSTER"
 
-# 3. render and apply the cluster on the hardened base with the built image
+# 3. render and apply the cluster on the pinned base with the built image
 log "applying CNPG cluster $CLUSTER in ns $NS"
 # ensure a clean namespace: wait out any prior terminating one to avoid a create/delete race
 kubectl delete ns "$NS" --ignore-not-found --wait=true --timeout=120s
@@ -111,15 +111,21 @@ echo "  present: $got" >&2
 [ "$got" = "documentdb pg_cron postgis vector" ] \
   || fail "expected 'documentdb pg_cron postgis vector', got '$got'"
 
-# 6. smoke: insert one document through the documentdb API and read it back; assert equal
+# 6. smoke: insert two documents into the same collection and find them back. The first
+#    insert creates the collection; the second takes the local-shard insert path, which
+#    segfaulted documentdb < v0.117 on PG 18.6.
 log "smoke round-trip through documentdb API"
 marker="smoke-ok-${DOCUMENTDB_TAG#v}"
-psql "select documentdb_api.insert_one('smoke_db','things', '{ \"_id\": 1, \"marker\": \"${marker}\" }')" >/dev/null
-# read the document back as extended JSON (bsonUseEJson renders JSON, not BSONHEX) and
-# assert the marker survived the round-trip
-readback="$(psql "set documentdb_core.bsonUseEJson to on; select document::text from documentdb_api.collection('smoke_db','things')")"
-echo "  inserted marker=$marker" >&2
+for id in 1 2; do
+  psql "select documentdb_api.insert_one('smoke_db','things', '{ \"_id\": $id, \"marker\": \"${marker}-$id\" }')" >/dev/null \
+    || fail "documentdb insert_one _id=$id failed (backend crash?)"
+done
+# find both back as extended JSON (bsonUseEJson renders JSON, not BSONHEX)
+readback="$(psql "set documentdb_core.bsonUseEJson to on; select cursorpage::text from documentdb_api.find_cursor_first_page('smoke_db', '{ \"find\": \"things\", \"filter\": {}, \"sort\": { \"_id\": 1 } }')")" \
+  || fail "documentdb find failed"
 echo "  read back: $readback" >&2
-grep -q "$marker" <<<"$readback" || fail "documentdb round-trip: marker '$marker' not found in read-back"
+for id in 1 2; do
+  grep -q "${marker}-$id" <<<"$readback" || fail "documentdb round-trip: '${marker}-$id' not found in find result"
+done
 
 log "PASS: cluster Ready, extensions present, documentdb round-trip equal"

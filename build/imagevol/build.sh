@@ -19,7 +19,7 @@ image="$(ARTIFACT=imagevol PG_MAJOR="$PG_MAJOR" ./build/common/image-tag.sh)"
 debdir="$(PG_MAJOR="$PG_MAJOR" TARGETARCH="${TARGETARCH:-}" ./build/common/stage-a.sh)"
 mapfile -t labels < <(ARTIFACT=imagevol PG_MAJOR="$PG_MAJOR" ./build/common/labels.sh)
 
-# Stage B -> CNPG ImageVolume image (gen_system.sh bundles all non-core deps).
+# Stage B -> CNPG ImageVolume image (bundled deps mangled + $ORIGIN-linked by isolate.sh).
 docker build --platform "$plat" -f build/imagevol/Dockerfile.imagevol \
   --build-arg DDB_BUILDER="$builder" \
   --build-context deb-stage="$debdir" \

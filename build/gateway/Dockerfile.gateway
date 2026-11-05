@@ -1,17 +1,16 @@
 # Compile the patched upstream documentdb_gateway in a Debian rust builder, then ship the
-# single binary on the hardened MinimOS CloudNativePG fips runtime.
+# single binary on the upstream CloudNativePG standard-trixie runtime.
 #
 # OPENSSL_NO_VENDOR=1 makes the binary dynamically link the base's libssl.so.3 /
-# libcrypto.so.3 instead of a vendored OpenSSL, so FIPS crypto is preserved.
+# libcrypto.so.3 instead of a vendored OpenSSL, so it picks up the base's OpenSSL updates.
 #
-# The Debian builder's ELF interpreter (/lib64/ld-linux-x86-64.so.2 on amd64) resolves
-# through the base's /lib64 -> lib -> usr/lib symlink chain, so no --dynamic-linker
-# override is needed; builder glibc 2.41 <= base glibc 2.43, so symbols resolve forward.
+# Builder (rust:1-trixie) and base are both Debian trixie, so the ELF interpreter and
+# glibc (2.41) match exactly.
 #
 # The build tree MUST live at a dir literally named pg_documentdb_gw: documentdb_macros'
 # proc-macro hardcodes ../../pg_documentdb_gw/include/... at compile time.
 ARG RUST_BUILDER
-ARG FIPS_BASE
+ARG BASE
 
 FROM ${RUST_BUILDER} AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +25,7 @@ RUN git apply --verbose /patches/0001-*.patch /patches/0002-*.patch /patches/000
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     OPENSSL_NO_VENDOR=1 cargo build -p documentdb_gateway --profile release-with-symbols
 
-FROM ${FIPS_BASE}
+FROM ${BASE}
 COPY --from=builder /build/pg_documentdb_gw/target/release-with-symbols/documentdb_gateway /usr/bin/documentdb_gateway
 COPY --from=builder /build/pg_documentdb_gw/SetupConfiguration.json /etc/documentdb/gateway/SetupConfiguration.json
 # Entrypoint composes the DOCUMENTDB_* env (URL file, password file, CA, listener TLS)

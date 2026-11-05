@@ -1,25 +1,25 @@
-From 1db87b72d2761a411ce27e23472a86b6417bd725 Mon Sep 17 00:00:00 2001
-From: gen <gen@local>
-Date: Fri, 24 Jul 2026 05:51:44 +0000
-Subject: [PATCH] fix(gw): recreate reaped data pool via shared pool in
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Emmanuel Gomez <emmanuel@gomez.io>
+Date: Thu, 5 Nov 2026 10:35:31 -0800
+Subject: [PATCH 3/3] fix(gw): recreate reaped data pool via shared pool in
  file-password mode
 
+Refreshed for DOCUMENTDB_TAG=v1.0-0: falls back to the shared pool for the cached pool settings via a new get_system_shared_pool_with_settings.
 ---
- .../src/postgres/conn_mgmt/pool_manager.rs    | 41 +++++++++++++++++--
- 1 file changed, 38 insertions(+), 3 deletions(-)
+ .../src/postgres/conn_mgmt/pool_manager.rs    | 45 +++++++++++++++++--
+ 1 file changed, 42 insertions(+), 3 deletions(-)
 
 diff --git a/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs b/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs
-index 0715e98..bf22721 100644
+index 274e8795..0d7a72f7 100644
 --- a/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs
 +++ b/documentdb_gateway_core/src/postgres/conn_mgmt/pool_manager.rs
-@@ -130,10 +130,23 @@ impl PoolManager {
-         let settings = PgPoolSettings::from_configuration(dynamic_configuration);
- 
+@@ -172,9 +172,22 @@ pub(crate) fn get_data_pool_with_settings(
+         settings: PgPoolSettings,
+     ) -> Result<Arc<ConnectionPool>> {
          match self.user_data_pools.get(&(username.to_owned(), settings)) {
 -            None => Err(DocumentDBError::internal_error(
 -                "Connection pool missing for user.".to_owned(),
 -            )),
-             Some(pool_ref) => Ok(Arc::clone(pool_ref.value())),
 +            None => {
 +                // A long-lived idle authenticated connection can outlive its per-user
 +                // pool: the reaper disposes pools unused for POSTGRES_POOL_DISPOSE_INTERVAL_SEC
@@ -29,17 +29,31 @@ index 0715e98..bf22721 100644
 +                // postgres_data_user, so the lazily-(re)created shared pool is an equivalent
 +                // connection. Use it instead of failing the request; upstream errors here.
 +                if self.setup_configuration.postgres_data_user_password().is_some() {
-+                    self.get_system_shared_pool(dynamic_configuration)
++                    self.get_system_shared_pool_with_settings(settings)
 +                } else {
 +                    Err(DocumentDBError::internal_error(
 +                        "Connection pool missing for user.".to_owned(),
 +                    ))
 +                }
 +            }
-         }
-     }
+             Some(pool_ref) => {
+                 let pool = Arc::clone(pool_ref.value());
+                 pool.touch();
+@@ -190,7 +203,13 @@ pub fn get_system_shared_pool(
+         dynamic_configuration: &dyn DynamicConfiguration,
+     ) -> Result<Arc<ConnectionPool>> {
+         let settings = PgPoolSettings::from_configuration(dynamic_configuration);
++        self.get_system_shared_pool_with_settings(settings)
++    }
  
-@@ -646,6 +659,28 @@ mod tests {
++    pub(crate) fn get_system_shared_pool_with_settings(
++        &self,
++        settings: PgPoolSettings,
++    ) -> Result<Arc<ConnectionPool>> {
+         match self.shared_data_pools.entry(settings) {
+             Entry::Occupied(pool_ref) => {
+                 let pool = Arc::clone(pool_ref.get());
+@@ -708,6 +727,26 @@ async fn test_get_data_pool_with_missing_user_returns_internal_error() {
          assert_eq!(err.error_code(), ErrorCode::InternalError);
      }
  
@@ -47,9 +61,7 @@ index 0715e98..bf22721 100644
 +    async fn test_get_data_pool_missing_user_self_heals_in_file_password_mode() {
 +        yield_now().await;
 +
-+        let dynamic_configuration = MaxConnectionConfig {
-+            max_conn: 100.into(),
-+        };
++        let dynamic_configuration = MaxConnectionConfig::new(100);
 +        let mut setup = setup_configuration();
 +        setup.postgres_data_user_password = Some("pw".to_owned());
 +        let pool_manager = test_pool_manager_with_setup(&setup);

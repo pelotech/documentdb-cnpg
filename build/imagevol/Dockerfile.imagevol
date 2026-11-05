@@ -1,34 +1,42 @@
-# Stage B: package the ICU-77 extension .deb as a CNPG ImageVolume image.
+# Stage B: package the extension .deb as a CNPG ImageVolume image.
 #
 # Install the Stage A .deb into a builder that has pg_config, lay out the tree
-# CNPG mounts, and bundle the runtime dependency closure in /system.
-#   /lib      <- extension .so's (symlinks dereferenced)
+# CNPG mounts, and bundle the runtime dependency closure next to the modules.
+#   /lib      <- extension modules + bundled deps renamed pglx_documentdb_<soname>,
+#                every ELF with RUNPATH=$ORIGIN (no ld_library_path needed)
 #   /share    <- control + SQL (extension/ and contrib/)
-#   /system   <- non-core runtime deps (ld_library_path: [lib, system])
 #   /licenses <- copyright
 #
-# cp -rL dereferences symlinks because scratch / ImageVolume drop dangling
+# glibc, ICU, the C++ runtime, OpenSSL and libpq are never bundled; they resolve from
+# the operand. cp -rL dereferences symlinks because scratch / ImageVolume drop dangling
 # symlinks, including the unversioned postgis.control.
 ARG DDB_BUILDER
 FROM ${DDB_BUILDER} AS deps
 COPY --from=deb-stage / /tmp/deb/
 COPY build/common/gen_system.sh /gen_system.sh
+COPY build/imagevol/isolate.sh /isolate.sh
 
 # Install the extension .deb; -f install backfills any missing runtime dep.
 RUN dpkg -i /tmp/deb/*.deb || (apt-get update && apt-get -y -f install && dpkg -i /tmp/deb/*.deb)
+RUN apt-get update && apt-get install -y --no-install-recommends patchelf >/dev/null
 
-# Assemble the CNPG layout and compute /system (no base introspection).
+# Copy only the documentdb + dependency modules (base PG modules come from the operand),
+# compute their dependency closure, then mangle + $ORIGIN-link it into /out/lib.
 RUN set -euo pipefail; \
+    pkglib="$(pg_config --pkglibdir)"; \
     mkdir -p /out/lib /out/share /out/licenses; \
-    cp -rL "$(pg_config --pkglibdir)/." /out/lib/; \
+    cp -L "$pkglib"/pg_documentdb*.so /out/lib/; \
+    for so in postgis-3 pg_cron vector rum; do \
+      cp -L "$pkglib/$so.so" /out/lib/ 2>/dev/null || echo "note: $so.so absent"; \
+    done; \
     cp -rL "$(pg_config --sharedir)/extension" /out/share/extension; \
     cp -rL "$(pg_config --sharedir)/contrib"   /out/share/contrib; \
     cp -a /usr/share/doc/*documentdb*/copyright /out/licenses/ 2>/dev/null || true; \
-    PKGLIB="$(pg_config --pkglibdir)" bash /gen_system.sh; \
-    echo "== /system contents =="; ls -1 /out/system
+    PKGLIB="$pkglib" SYSTEM_OUT=/tmp/deps bash /gen_system.sh; \
+    bash /isolate.sh /tmp/deps; \
+    echo "== /lib contents =="; ls -1 /out/lib
 
 FROM scratch
 COPY --from=deps /out/lib/      /lib/
 COPY --from=deps /out/share/    /share/
-COPY --from=deps /out/system/   /system/
 COPY --from=deps /out/licenses/ /licenses/

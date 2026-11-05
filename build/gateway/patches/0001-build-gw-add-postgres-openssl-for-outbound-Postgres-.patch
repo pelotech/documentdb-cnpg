@@ -1,15 +1,14 @@
-From 06ccea2b087bb8116cae948a4126eeef75e63f30 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Emmanuel Gomez <emmanuel@gomez.io>
-Date: Wed, 22 Jul 2026 09:21:58 -0700
-Subject: [PATCH 1/2] build(gw): add postgres-openssl for outbound Postgres TLS
+Date: Thu, 5 Nov 2026 10:34:10 -0800
+Subject: [PATCH 1/3] build(gw): add postgres-openssl for outbound Postgres TLS
 
 Add the `postgres-openssl` crate (0.5) so the gateway can build a
 `MakeTlsConnector` for its backend PostgreSQL connections. It reuses the
 existing `openssl` 0.10 / `openssl-sys` 0.9 already in the tree (no
-duplicate, no vendored OpenSSL), keeping the FIPS system-OpenSSL link.
+duplicate, no vendored OpenSSL), keeping the system-OpenSSL link.
 
-Part of the documentdb-gw TLS + password source patch (authored against
-DOCUMENTDB_TAG=v0.114-0).
+Refreshed for DOCUMENTDB_TAG=v1.0-0.
 ---
  Cargo.lock                         | 13 +++++++++++++
  Cargo.toml                         |  1 +
@@ -17,20 +16,20 @@ DOCUMENTDB_TAG=v0.114-0).
  3 files changed, 15 insertions(+)
 
 diff --git a/Cargo.lock b/Cargo.lock
-index 4f582a8..4712f1d 100644
+index 7a75ddb4..e7217079 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -633,6 +633,7 @@ dependencies = [
-  "opentelemetry",
-  "opentelemetry-otlp",
-  "opentelemetry_sdk",
+@@ -624,6 +624,7 @@ dependencies = [
+  "nacelle",
+  "once_cell",
+  "openssl",
 + "postgres-openssl",
-  "rand 0.8.6",
+  "rand 0.10.2",
   "regex",
   "scc",
-@@ -1798,6 +1799,18 @@ dependencies = [
-  "plotters-backend",
- ]
+@@ -1908,6 +1909,18 @@ version = "1.14.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "3d20d5497ef88037a52ff98267d066e7f11fcc5e99bbfbd58a42336193aacec3"
  
 +[[package]]
 +name = "postgres-openssl"
@@ -46,31 +45,28 @@ index 4f582a8..4712f1d 100644
 +
  [[package]]
  name = "postgres-protocol"
- version = "0.6.11"
+ version = "0.6.12"
 diff --git a/Cargo.toml b/Cargo.toml
-index c69fc2d..3273f5a 100644
+index 8e6d447d..2fbc49a6 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -43,6 +43,7 @@ mongodb = { version = "3.6.0", default-features = false, features = [
+@@ -56,6 +56,7 @@ mongodb = { version = "3.6.0", default-features = false, features = [
  ] }
  once_cell = "1.21.4"
- openssl = "0.10.79"
+ openssl = "0.10.81"
 +postgres-openssl = "0.5"
- opentelemetry = { version = "0.30", features = ["metrics"] }
- opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic", "metrics"] }
- opentelemetry_sdk = { version = "0.30", features = ["rt-tokio", "metrics"] }
+ opentelemetry = { version = "0.32.0", features = ["metrics", "trace"] }
+ opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic", "metrics", "trace"] }
+ opentelemetry_sdk = { version = "0.32.0", features = ["rt-tokio", "metrics", "trace"] }
 diff --git a/documentdb_gateway_core/Cargo.toml b/documentdb_gateway_core/Cargo.toml
-index 5bb8a76..bc898b9 100644
+index de154017..e2202ed6 100644
 --- a/documentdb_gateway_core/Cargo.toml
 +++ b/documentdb_gateway_core/Cargo.toml
-@@ -26,6 +26,7 @@ either.workspace = true
- hex.workspace = true
+@@ -37,6 +37,7 @@ metrics.workspace = true
+ nacelle.workspace = true
  once_cell.workspace = true
  openssl.workspace = true
 +postgres-openssl.workspace = true
- opentelemetry.workspace = true
- opentelemetry-otlp.workspace = true
- opentelemetry_sdk.workspace = true
--- 
-2.49.0
-
+ rand.workspace = true
+ regex.workspace = true
+ scc.workspace = true

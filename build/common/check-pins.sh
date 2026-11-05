@@ -25,8 +25,7 @@ check() { # check KEY FILE...
   [ "$fail" = 1 ] || echo "OK: $key=$first"
 }
 
-check DOCUMENTDB_TAG  "$E" "$I" "$G"
-check ICU_VERSION     "$E" "$I"
-check ICU_MAJOR       "$E" "$I"
+check DOCUMENTDB_TAG   "$E" "$I" "$G"
+check ICU_MAJOR        "$E" "$I"
 check HARDENED_BASE_18 "$E" "$I" "$G"
 exit "$fail"

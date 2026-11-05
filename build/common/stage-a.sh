@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Produce the Stage-A ICU-77 documentdb .deb for one Postgres major.
+# Produce the Stage-A documentdb .deb for one Postgres major.
 # Fetches pinned documentdb source, builds the upstream deb-builder image (ddb-builder:pg${M}),
 # then Stage A (Dockerfile.deb) -> a local dir. Prints the output dir on stdout; logs to stderr.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${IMAGE_REPO:?IMAGE_REPO must be exported by the calling build script}"
 : "${DOCUMENTDB_TAG:?DOCUMENTDB_TAG must be exported by the calling build script}"
-: "${ICU_VERSION:?ICU_VERSION must be exported by the calling build script}"
+: "${ICU_MAJOR:?ICU_MAJOR must be exported by the calling build script}"
 PG_MAJOR="${PG_MAJOR:-$DEFAULT_PG_MAJOR}"
 
 host_arch="$(uname -m)"
@@ -43,7 +43,7 @@ docker build --platform "$plat" -f "$work/src/packaging/deb/Dockerfile-deb" \
 rm -rf "$debdir"
 docker build --platform "$plat" -f build/common/Dockerfile.deb \
   --build-arg DDB_BUILDER="$builder" \
-  --build-arg ICU_VERSION="$ICU_VERSION" \
+  --build-arg ICU_MAJOR="$ICU_MAJOR" \
   --build-arg DOCUMENTDB_TAG="$DOCUMENTDB_TAG" \
   --build-arg PG_MAJOR="$PG_MAJOR" \
   --output "type=local,dest=$debdir" . 1>&2

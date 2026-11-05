@@ -130,7 +130,7 @@ jobs:
             echo "LOCAL_IMAGE=$(ARTIFACT="$art" PG_MAJOR="$pg" REF=local ./build/common/image-tag.sh)"
           } >> "$GITHUB_ENV"
 
-      # ICU-drift guard: the base has no shell, so export its filesystem and grep the
+      # ICU-drift guard: export the base's filesystem (no exec needed) and grep the
       # libicui18n soname from the tar listing. sort -u reads all input to avoid a
       # SIGPIPE from a short-circuiting grep under pipefail.
       - name: ICU-drift guard
@@ -143,7 +143,7 @@ jobs:
             | grep -oE 'libicui18n\.so\.[0-9]+' | grep -oE '[0-9]+$' | sort -u)
           got="${majors[0]:-}"
           if [ "${#majors[@]}" -ne 1 ] || [ "$got" != "$ICU_MAJOR" ]; then
-            echo "::error::hardened base ICU '${majors[*]:-none}' != pinned $ICU_MAJOR; re-pin ICU_VERSION and rebuild"
+            echo "::error::base ICU '${majors[*]:-none}' != pinned $ICU_MAJOR; re-pin ICU_MAJOR and rebuild"
             exit 1
           fi
           echo "ICU-drift guard OK: base ICU $got == pinned $ICU_MAJOR"
@@ -230,7 +230,7 @@ jobs:
       - name: Build
         run: TARGETARCH=${{ matrix.arch }} ./build/gateway/build-gateway.sh
 
-      # FIPS linkage (readelf NEEDED libssl/libcrypto) and that the binary runs on
+      # OpenSSL linkage (readelf NEEDED libssl/libcrypto) and that the binary runs on
       # the base. The mongosh round-trip is the gateway-e2e job.
       - name: Verify
         run: REF=local ./test/verify-gateway.sh

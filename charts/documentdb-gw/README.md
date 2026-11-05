@@ -19,7 +19,7 @@ Always:
 
 Additionally, when `cluster.create=true` (the default):
 
-- a CNPG `Cluster` running the stock hardened `fips:18` base with documentdb
+- a CNPG `Cluster` running the stock upstream CNPG `18.x-standard-trixie` base with documentdb
   mounted as a declarative `ImageVolume` extension,
 - a CNPG `managed.roles` entry provisioning the `gwuser` login role with
   membership in `documentdb_admin_role`,
@@ -57,8 +57,8 @@ This creates the `Cluster/ddb-pg`, provisions the `gwuser` role (via CNPG
 Secret, and issues a self-signed listener certificate. No manual `GRANT` is
 needed — CNPG reconciles the role membership.
 
-The cluster's base image (`cluster.imageName`) defaults to the pinned hardened
-`cloudnative-pg-postgresql-fips:18.4` digest and the extension
+The cluster's base image (`cluster.imageName`) defaults to the pinned upstream
+`ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie` digest and the extension
 (`cluster.extensionImage`) to the matching published tag; override both for your
 environment.
 
@@ -168,8 +168,8 @@ self-signed listener cert (`listenerTLS.mode=generate`).
 | `cluster.create` | `true` | Create the CNPG ImageVolume cluster, gateway role, and password secret. |
 | `cluster.name` | `ddb-pg` | Cluster name (not release-scoped — see the multi-release caveat). |
 | `cluster.instances` | `1` | Cluster instance count. |
-| `cluster.imageName` | pinned `cloudnative-pg-postgresql-fips:18.4@sha256:…` | Stock hardened base image (documentdb is mounted, not baked). |
-| `cluster.extensionImage` | `ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu77-0.1.3` | documentdb ImageVolume extension. |
+| `cluster.imageName` | pinned `ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:…` | Stock CNPG base image (documentdb is mounted, not baked). Must be ICU 76 to match the extension. |
+| `cluster.extensionImage` | `ghcr.io/pelotech/documentdb-cnpg/extension:pg18-0.114.0-icu76-0.2.0` | documentdb ImageVolume extension. |
 | `cluster.extensionPullPolicy` | `IfNotPresent` | Extension image pull policy. |
 | `cluster.storage` | `1Gi` | Cluster storage size. |
 | `cluster.enableSuperuserAccess` | `false` | CNPG superuser access. |

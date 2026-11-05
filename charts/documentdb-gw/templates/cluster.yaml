@@ -26,7 +26,6 @@ spec:
           pullPolicy: {{ .Values.cluster.extensionPullPolicy }}
         extension_control_path: [share]
         dynamic_library_path: [lib]
-        ld_library_path: [lib, system]
   managed:
     roles:
       - name: {{ .Values.gateway.pg.user }}

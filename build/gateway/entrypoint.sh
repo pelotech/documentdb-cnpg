@@ -63,13 +63,13 @@ export DOCUMENTDB_LOG_LEVEL="$LOG_LEVEL"
 case "$LISTENER_TLS" in
   auto)
     # Self-signed listener cert generated at startup (dev/testing only). The gateway's
-    # generator shells out to the `openssl` CLI, which the hardened base omits, so fail
-    # fast with guidance instead of a cryptic "Failed to create TLS provider" panic.
+    # generator shells out to the `openssl` CLI; if the image lacks it, fail fast with
+    # guidance instead of a cryptic "Failed to create TLS provider" panic.
     command -v openssl >/dev/null 2>&1 || die \
-      "LISTENER_TLS=auto needs an 'openssl' CLI, which this hardened image omits. Use LISTENER_TLS=pem with a mounted cert (set TLS_CERT_FILE/TLS_KEY_FILE), e.g. issued by cert-manager."
+      "LISTENER_TLS=auto needs an 'openssl' CLI, which this image lacks. Use LISTENER_TLS=pem with a mounted cert (set TLS_CERT_FILE/TLS_KEY_FILE), e.g. issued by cert-manager."
     export DOCUMENTDB_TLS_AUTO_GENERATE=true
-    # The gateway writes the generated cert under a TLS state dir, but the hardened
-    # base has no writable default for uid 26 and the $HOME fallback may not exist, so
+    # The gateway writes the generated cert under a TLS state dir, but the base has
+    # no writable default for uid 26 and the $HOME fallback may not exist, so
     # auto-gen panics. Point it at a writable, ephemeral dir and ensure it exists.
     tls_state_dir="${DOCUMENTDB_TLS_STATE_DIR:-/tmp/documentdb-gw-tls}"
     mkdir -p "$tls_state_dir" || die "failed creating TLS state dir $tls_state_dir"
