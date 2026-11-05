@@ -27,9 +27,9 @@ WORKDIR /build
 #    A line-only delete would leave the recipe body attached and still run `make check`.
 #    The trailing (?:\n|\z) also consumes the final recipe line when rules has no trailing newline.
 RUN set -euo pipefail; \
-    perl -0pi -e 's/^override_dh_auto_test:\n(?:\t.*(?:\n|\z))*//m' debian/rules; \
+    perl -0pi -e 's/^override_dh_auto_test:(?:\n|\z)(?:\t.*(?:\n|\z))*//m' debian/rules; \
     ! grep -q '^override_dh_auto_test:' debian/rules; \
-    ! grep -q 'make check' debian/rules
+    ! grep -qE '^[^#]*make check' debian/rules
 
 # 3. Build the .deb. nocheck makes the default dh_auto_test a no-op; noautodbgsym keeps
 #    the output to a single package. OS=deb13 matches the trixie builder base.
