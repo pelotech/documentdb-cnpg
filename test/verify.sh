@@ -111,15 +111,21 @@ echo "  present: $got" >&2
 [ "$got" = "documentdb pg_cron postgis vector" ] \
   || fail "expected 'documentdb pg_cron postgis vector', got '$got'"
 
-# 6. smoke: insert one document through the documentdb API and read it back; assert equal
+# 6. smoke: insert two documents into the same collection and find them back. The first
+#    insert creates the collection; the second takes the local-shard insert path, which
+#    segfaulted documentdb < v0.117 on PG 18.6.
 log "smoke round-trip through documentdb API"
 marker="smoke-ok-${DOCUMENTDB_TAG#v}"
-psql "select documentdb_api.insert_one('smoke_db','things', '{ \"_id\": 1, \"marker\": \"${marker}\" }')" >/dev/null
-# read the document back as extended JSON (bsonUseEJson renders JSON, not BSONHEX) and
-# assert the marker survived the round-trip
-readback="$(psql "set documentdb_core.bsonUseEJson to on; select document::text from documentdb_api.collection('smoke_db','things')")"
-echo "  inserted marker=$marker" >&2
+for id in 1 2; do
+  psql "select documentdb_api.insert_one('smoke_db','things', '{ \"_id\": $id, \"marker\": \"${marker}-$id\" }')" >/dev/null \
+    || fail "documentdb insert_one _id=$id failed (backend crash?)"
+done
+# find both back as extended JSON (bsonUseEJson renders JSON, not BSONHEX)
+readback="$(psql "set documentdb_core.bsonUseEJson to on; select cursorpage::text from documentdb_api.find_cursor_first_page('smoke_db', '{ \"find\": \"things\", \"filter\": {}, \"sort\": { \"_id\": 1 } }')")" \
+  || fail "documentdb find failed"
 echo "  read back: $readback" >&2
-grep -q "$marker" <<<"$readback" || fail "documentdb round-trip: marker '$marker' not found in read-back"
+for id in 1 2; do
+  grep -q "${marker}-$id" <<<"$readback" || fail "documentdb round-trip: '${marker}-$id' not found in find result"
+done
 
 log "PASS: cluster Ready, extensions present, documentdb round-trip equal"
