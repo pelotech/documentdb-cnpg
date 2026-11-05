@@ -35,7 +35,7 @@ bake asserts both so a layout change fails the build. The build:
   directory, so base Postgres modules are left in place;
 - bundles the extension's non-core runtime dependencies (postgis' GEOS/PROJ/GDAL
   tree and so on, which the base does not ship) into `/usr/lib/documentdb-system`,
-  using the same closure as the ImageVolume `/system` (`gen_system.sh`);
+  using the same closure as the ImageVolume (`gen_system.sh`);
 - rewrites each module's RPATH (`patchelf`) to `pkglibdir` plus
   `/usr/lib/documentdb-system`, so the bundled libraries are only visible to
   these modules and the system `ldconfig` cache is left alone;

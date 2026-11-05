@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
-# Compute the extension's /system runtime dependency closure.
+# Compute the extension's runtime dependency closure.
 #
-# Transitive ldd closure of every .so that gets loaded (everything in
-# shared_preload_libraries plus everything `CREATE EXTENSION documentdb CASCADE`
-# pulls in), minus ONLY the hard-core libs (glibc / ICU / C++ runtime) that must
-# come from the base to stay ABI-consistent. Everything else is bundled.
+# Transitive ldd closure of every module in /out/lib (the extension .so's we ship),
+# minus the libs that must come from the operand: glibc, ICU and the C++ runtime (ABI
+# must match the running postgres), and OpenSSL + libpq (the operand's copies, so a FIPS
+# operand keeps its own OpenSSL). Everything else is bundled.
 #
-# Over-bundling a lib the base also ships is safe (the same soname resolves from
-# /lib or /system) and needs no base introspection; diffing against base libs can
-# drop a needed lib (e.g. libxml2) that happens to overlap with the base.
+# Bundling a lib the operand also ships is NOT automatically safe: if it is put on a
+# process-wide search path (LD_LIBRARY_PATH / ld_library_path / ldconfig) it replaces the
+# operand's copy for postgres itself. The ImageVolume therefore renames every bundled lib
+# to a private soname and resolves it via $ORIGIN (build/imagevol/isolate.sh); the engine
+# reaches its copy via per-module RPATH.
 #
-# Inputs: $PKGLIB (dir with the installed extension libs); writes /out/system.
+# Inputs: $PKGLIB (installed pkglibdir), modules already copied to /out/lib.
+# Output: $SYSTEM_OUT (default /out/system).
 set -euo pipefail
 
 : "${PKGLIB:?set PKGLIB to the extension pkglibdir}"
-mkdir -p /out/system
+out="${SYSTEM_OUT:-/out/system}"
+mkdir -p "$out"
 
-for so in "$PKGLIB"/pg_documentdb*.so "$PKGLIB"/pg_cron.so "$PKGLIB"/postgis-3.so "$PKGLIB"/vector.so "$PKGLIB"/rum.so; do
-  [ -e "$so" ] || continue   # some modules may be absent
+for so in /out/lib/*.so; do
   ldd "$so" 2>/dev/null | awk '/=> \//{print $3}'
 done | sort -u | while read -r lib; do
   [ -f "$lib" ] || continue
-  case "$(basename "$lib")" in
+  name="$(basename "$lib")"
+  [ -e "/out/lib/$name" ] && continue   # one of our own modules
+  case "$name" in
     libc.so.*|libm.so.*|libdl.so.*|libpthread.so.*|librt.so.*|ld-linux*|libresolv.so.*|\
-    libicudata.so.*|libicui18n.so.*|libicuuc.so.*|libstdc++.so.*|libgcc_s.so.*) continue;;
+    libicudata.so.*|libicui18n.so.*|libicuuc.so.*|libstdc++.so.*|libgcc_s.so.*|\
+    libssl.so.*|libcrypto.so.*|libpq.so.*) continue;;
   esac
-  cp -aL "$lib" /out/system/
+  cp -aL "$lib" "$out/"
 done

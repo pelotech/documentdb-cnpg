@@ -27,7 +27,6 @@ spec:
           pullPolicy: Never
         extension_control_path: [share]
         dynamic_library_path: [lib]
-        ld_library_path: [lib, system]
   bootstrap:
     initdb:
       database: postgres

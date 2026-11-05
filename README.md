@@ -155,7 +155,6 @@ spec:
           reference: ghcr.io/pelotech/documentdb-cnpg/extension:pg18-1.0.0-icu76-<release>
         extension_control_path: [share]
         dynamic_library_path: [lib]
-        ld_library_path: [lib, system]
   bootstrap:
     initdb:
       database: postgres
@@ -203,8 +202,11 @@ From there the two artifacts diverge:
   `/usr/lib/documentdb-system`, and points the modules' RPATH there with
   `patchelf` so nothing touches the system `ldconfig` cache.
 - **ImageVolume** (`build/imagevol/build.sh`, `build/imagevol/Dockerfile.imagevol`): lays the same
-  `.deb` out as a standalone `/lib` + `/share` + `/system` tree in the shape
-  CNPG expects for an `ImageVolume` mount, with no base image involved.
+  `.deb` out as a standalone `/lib` + `/share` tree in the shape
+  CNPG expects for an `ImageVolume` mount, with no base image involved. Bundled
+  dependencies sit in `/lib` renamed `pglx_documentdb_<soname>`, and every ELF has
+  `RUNPATH=$ORIGIN`, so the Cluster needs no `ld_library_path`. glibc, ICU, OpenSSL
+  and libpq always come from the operand.
 
 ## MongoDB gateway (documentdb-gw)
 
